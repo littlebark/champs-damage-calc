@@ -92,9 +92,11 @@ powershell -NoProfile -ExecutionPolicy Bypass -File android\tools\android\run-gr
    - 改自有包名：`namespace` / `applicationId` / 目录包名 / Manifest 引用。
    - 按裁剪清单逐组解耦删除：先去 Integrity + UpdateManager 引用并编译；再解耦队伍码 UI/编解码；最后剥离远程预设同步。**每删一组跑一次 `:app:assembleDebug` 验证。**
    - 队伍码存档序列化耦合在 `BattleModels.kt`（`ShowdownTeamCodec.export/parse`），删编码前先确认本地存档格式是否可改为独立 JSON。
-2. **计算器首页 + 列表/详情 tab**（用户首要需求）
-   - 首页直接是伤害计算器：手机上下双方堆叠、少填项（`docs/ui-spec.md`）；第二 tab 宝可梦列表；点进详情看种族值/特性/属性/招式列表。
-   - 组 `DamageRequest` → `DamageEngineRuntime.calculate` → 解析 `moveResults[].profileRanges` 渲染三档区间与 KO 摘要；中文名 ↔ 内部 ID 走 `data/ref/v18/zh-Hans.json`。
+2. **计算器首页 + 列表/详情 tab**（2026-11-13 已完成第一版，见 `docs/android_three_tier_ui_2026-11-13_zh.md`）
+   - 首页直接是伤害计算器：手机上下双方堆叠、少填项（`docs/ui-spec.md`）；第二 tab 宝可梦列表；点进详情看种族值/特性/属性/招式列表。**已完成**：默认 tab 改为计算器；`PokedexScreen` 提供 359 个形态的搜索/详情/可学招式。
+   - 三档区间渲染**已完成**：`tierDefenderProfileSet` 一次请求四个档位（HP+2 / HP+32 / HP+32+防御32 Bold / HP+32+特防32 Calm），按招式分类取第三或第四档。
+   - 悬浮窗**已完成**逐招红框第一版：`DAMAGE_1..4` 四个独立小窗，锚点在游戏 16:9 viewport 的 `x=0.462`、四行 `y=0.500/0.595/0.690/0.785`。**待真机校准**。
+   - 待办：选招画面 OCR（识别四个招式名 + 双方当前上场），自动回填 HUD 槽位；真机核对红框位置。
 3. **#33 悬浮球 + 截屏 + OCR + 三档估算**（后置，UI 稳定后再接）
    - 悬浮窗权限申请与可拖动悬浮球；MediaProjection 截屏授权与前台服务；队伍/选招画面识别；识别结果回填我方队伍档案，逐招在选招界面红框位出三档估算。
 4. 数据：APK 离线资源从 `data/ref/v18/` 与 `android/src/data/` 就位；赛季/规则集版本字段预留。

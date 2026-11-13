@@ -652,6 +652,7 @@ class OpponentPresetRepository(private val context: Context) {
     val speciesCatalog: List<EntityValue>
     val itemCatalog: List<EntityValue>
     val natures: List<NatureOption>
+    val allForms: List<SpeciesFormOption>
     val legalMovePoolVersion: String
     val legalMovePoolSource: String
     val legalMovePoolDataDate: String?
@@ -663,6 +664,7 @@ class OpponentPresetRepository(private val context: Context) {
     private val formBySpecies: Map<String, SpeciesFormOption>
     private val formsByFamily: Map<String, List<SpeciesFormOption>>
     private val moveTypeByShowdown: Map<String, String>
+    private val moveCategoryByShowdown: Map<String, String>
     private val movePriorityByShowdown: Map<String, Int>
     private val typeNameByShowdown: Map<String, String>
     private val userPresetStore = OpponentUserPresetStore(context.filesDir.resolve(USER_OPPONENT_PRESETS_FILE))
@@ -699,6 +701,10 @@ class OpponentPresetRepository(private val context: Context) {
         legalMovePoolDataDate = root.optString("learnsetDataDate").takeIf(String::isNotBlank)
         val moveTypes = root.optJSONObject("moveTypes") ?: JSONObject()
         moveTypeByShowdown = moveTypes.keys().asSequence().associateWith(moveTypes::getString)
+        val moveMetadata = root.optJSONObject("moveMetadata") ?: JSONObject()
+        moveCategoryByShowdown = moveMetadata.keys().asSequence().mapNotNull { key ->
+            moveMetadata.optJSONObject(key)?.optString("category")?.takeIf(String::isNotBlank)?.let { key to it }
+        }.toMap()
         val movePriorities = root.optJSONObject("movePriorities") ?: JSONObject()
         movePriorityByShowdown = movePriorities.keys().asSequence().associateWith(movePriorities::getInt)
         val forms = root.getJSONArray("speciesForms").toObjects().map { entry ->
@@ -716,6 +722,10 @@ class OpponentPresetRepository(private val context: Context) {
             )
         }
         formBySpecies = forms.associateBy { normalizeShowdownId(it.species.showdownId) }
+        allForms = forms.sortedWith(
+            compareBy<SpeciesFormOption> { if (isMegaSpeciesForm(it.species.showdownId)) 1 else 0 }
+                .thenBy { it.species.displayName },
+        )
         formsByFamily = forms.groupBy(SpeciesFormOption::familyId).mapValues { (_, family) ->
             family.sortedWith(compareBy<SpeciesFormOption> { if (isMegaSpeciesForm(it.species.showdownId)) 1 else 0 }
                 .thenBy { it.species.displayName })
@@ -962,6 +972,20 @@ class OpponentPresetRepository(private val context: Context) {
     fun moveTypeFor(move: MoveValue): String? = move.type
         ?: moveTypeByShowdown[normalizeShowdownId(move.entity.showdownId)]
 
+    fun moveCategoryFor(move: MoveValue): String = move.category
+        ?: moveCategoryByShowdown[normalizeShowdownId(move.entity.showdownId)]
+        ?: "Status"
+
+    fun typeDisplayName(type: String?): String = type
+        ?.let { typeNameByShowdown[normalizeShowdownId(it)] ?: it }
+        ?: "未知"
+
+    fun formFor(species: EntityValue): SpeciesFormOption? =
+        formBySpecies[normalizeShowdownId(species.showdownId)]
+
+    fun learnableMovesFor(species: EntityValue): List<MoveValue> =
+        formBySpecies[normalizeShowdownId(species.showdownId)]?.learnableMoves.orEmpty()
+
     fun moveTypeLabel(move: MoveValue): String = moveTypeFor(move)
         ?.let { typeNameByShowdown[normalizeShowdownId(it)] ?: it }
         ?: "未知"
@@ -1092,10 +1116,13 @@ class OpponentPresetRepository(private val context: Context) {
     )
 
     private fun parseMove(json: JSONObject): MoveValue? = json.optJSONObject("move")?.let {
+        val entity = it.toEntityValue()
+        val key = normalizeShowdownId(entity.showdownId)
         MoveValue(
-            entity = it.toEntityValue(),
+            entity = entity,
             basePower = json.optInt("basePower").takeIf { value -> value > 0 },
-            type = json.optString("type").takeIf(String::isNotBlank),
+            type = json.optString("type").takeIf(String::isNotBlank) ?: moveTypeByShowdown[key],
+            category = json.optString("category").takeIf(String::isNotBlank) ?: moveCategoryByShowdown[key],
         )
     }
 
@@ -1121,6 +1148,35 @@ class OpponentPresetRepository(private val context: Context) {
         }
         return StatFields.fromMap(STATS.associateWith { stat ->
             championsStat(stat, target.getValue(stat), points.getValue(stat), best.first, best.second).toString()
+        })
+    }
+
+    /** 按种族值 + 加点 + 性格推算实际能力值，用于计算器输入框的即时联动。 */
+    fun statsFor(species: EntityValue, points: StatFields, nature: EntityValue?): StatFields {
+        val form = formBySpecies[normalizeShowdownId(species.showdownId)] ?: return StatFields()
+        return calculateStats(form.baseStats, sanitizedPoints(points), nature)
+    }
+
+    /** 按种族值 + 加点 + 单一性格系数（0.9 / 1.0 / 1.1）推算实际能力值。 */
+    fun statsWithNatureMultiplier(
+        species: EntityValue,
+        points: StatFields,
+        stat: String,
+        multiplier: Double,
+    ): StatFields {
+        val form = formBySpecies[normalizeShowdownId(species.showdownId)] ?: return StatFields()
+        val bases = form.baseStats.asMap()
+        val pointValues = sanitizedPoints(points).asMap()
+        val plus = stat.takeIf { multiplier > 1.0 }
+        val minus = stat.takeIf { multiplier < 1.0 }
+        return StatFields.fromMap(STATS.associateWith { key ->
+            championsStat(
+                key,
+                bases[key]?.toIntOrNull() ?: 0,
+                pointValues[key]?.toIntOrNull() ?: 0,
+                plus,
+                minus,
+            ).toString()
         })
     }
 
@@ -1389,6 +1445,7 @@ fun buildBattleDamageRequest(
     legalMoves: List<MoveValue>,
     presetRepository: OpponentPresetRepository,
     allOwnMoves: Boolean = false,
+    tierDefenderProfile: Boolean = false,
 ): String {
     val state = session.calculation
     val ownSlot = state.ownSlot.coerceIn(0, ownTeam.pokemon.lastIndex)
@@ -1444,10 +1501,14 @@ fun buildBattleDamageRequest(
             put("defenderSide", "OPPONENT")
             put("attacker", ownBuild)
             put("defenderIdentity", JSONObject().put("species", opponentEntity))
-            put("defenderProfileSet", JSONObject().apply {
-                put("defenderSpecies", opponentEntity)
-                put("selectedProfileId", preset.profileId)
-                put("profiles", JSONArray().put(preset.toProfileJson(opponentCondition.stages, opponentCondition.burned)))
+            put("defenderProfileSet", if (tierDefenderProfile) {
+                tierDefenderProfileSet(opponentEntity)
+            } else {
+                JSONObject().apply {
+                    put("defenderSpecies", opponentEntity)
+                    put("selectedProfileId", preset.profileId)
+                    put("profiles", JSONArray().put(preset.toProfileJson(opponentCondition.stages, opponentCondition.burned)))
+                }
             })
             put("moveSelection", JSONObject().apply {
                 put("mode", if (allOwnMoves) "ALL_ATTACKER_MOVES" else "ONE_MOVE")

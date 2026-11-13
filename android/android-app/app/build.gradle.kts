@@ -296,6 +296,7 @@ dependencies {
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("com.google.mlkit:text-recognition-chinese:16.0.1")
     implementation("com.google.mlkit:text-recognition:16.0.1")
+    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.20.0")
     implementation("org.opencv:opencv:4.13.0")
     add(mlKitLicenseArtifacts.name, "com.google.mlkit:text-recognition-chinese:16.0.1@aar")
     add(mlKitLatinLicenseArtifacts.name, "com.google.mlkit:text-recognition:16.0.1@aar")

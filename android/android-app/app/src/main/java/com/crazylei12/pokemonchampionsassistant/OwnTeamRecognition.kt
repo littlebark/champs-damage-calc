@@ -284,7 +284,28 @@ data class ImportSaveResult(
     val nextStep: OwnTeamImportNextStep? = null,
 )
 
-class OwnTeamOcrEngine(context: Context) : AutoCloseable {
+data class SingleStatsRecord(val actualStats: StatFields, val statPoints: StatFields)
+
+data class SnapshotTextLine(
+    val text: String,
+    val left: Int,
+    val top: Int,
+    val right: Int,
+    val bottom: Int,
+    val imageWidth: Int,
+    val imageHeight: Int,
+)
+
+private val SINGLE_STAT_LABELS = listOf(
+    "HP" to "hp",
+    "攻击" to "atk",
+    "防御" to "def",
+    "特攻" to "spa",
+    "特防" to "spd",
+    "速度" to "spe",
+)
+
+class OwnTeamOcrEngine(context: Context, private val paddle: PaddleOcrEngine? = null) : AutoCloseable {
     private val appContext = context.applicationContext
     private val tasks = CloseSafeSerialExecutor()
     private val recognizer = TextRecognition.getClient(ChineseTextRecognizerOptions.Builder().build())
@@ -302,6 +323,166 @@ class OwnTeamOcrEngine(context: Context) : AutoCloseable {
         }
         if (task == null) callback(Result.failure(CancellationException("我方队伍识别器已关闭")))
         return task
+    }
+
+    /**
+     * 读取对战中“当前宝可梦状态”面板上的六项能力值与加点。
+     *
+     * 该面板与队伍查看页布局不同：只有一只宝可梦，六行分别是
+     * HP / 攻击 / 防御 / 特攻 / 特防 / 速度，每行左侧是最终能力值，
+     * 右侧是已投入的能力点数。这里按标签定位行，再取该行的数字。
+     */
+    fun recognizeSingleStats(
+        bitmap: Bitmap,
+        callback: (Result<SingleStatsRecord>) -> Unit,
+    ): Future<*>? {
+        val task = tasks.submitCancellable {
+            val result = runCatching { recognizeSingleStatsBlocking(bitmap) }
+            callback(result)
+        }
+        if (task == null) callback(Result.failure(CancellationException("我方队伍识别器已关闭")))
+        return task
+    }
+
+    /** 选招页整屏文字（带坐标），用于找出我方、对手和四个招式。 */
+    fun recognizeSnapshotText(
+        bitmap: Bitmap,
+        callback: (Result<List<SnapshotTextLine>>) -> Unit,
+    ): Future<*>? {
+        val task = tasks.submitCancellable {
+            val result = runCatching {
+                val lines = ArrayList<SnapshotTextLine>()
+                Tasks.await(recognizer.process(InputImage.fromBitmap(bitmap, 0))).textBlocks.forEach { block ->
+                    block.lines.forEach { line ->
+                        val box = line.boundingBox ?: return@forEach
+                        lines += SnapshotTextLine(
+                            text = line.text,
+                            left = box.left,
+                            top = box.top,
+                            right = box.right,
+                            bottom = box.bottom,
+                            imageWidth = bitmap.width,
+                            imageHeight = bitmap.height,
+                        )
+                    }
+                }
+                lines
+            }
+            callback(result)
+        }
+        if (task == null) callback(Result.failure(CancellationException("识别器已关闭")))
+        return task
+    }
+
+    private fun recognizeSingleStatsBlocking(bitmap: Bitmap): SingleStatsRecord {
+        paddle?.let { engine ->
+            runCatching {
+                val lines = engine.recognize(bitmap)
+                if (lines.isNotEmpty()) {
+                    val fromPaddle = statsFromLines(lines)
+                    if (fromPaddle != null) return fromPaddle
+                }
+            }.onFailure { android.util.Log.e("OwnTeamOcr", "Paddle stats recognition failed", it) }
+        }
+        return recognizeSingleStatsWithMlKit(bitmap)
+    }
+
+    /** 从 PaddleOCR 的整屏行里取出六项能力值和加点：标签行本身的数字，或紧邻其右侧的数字列。 */
+    private fun statsFromLines(lines: List<SnapshotTextLine>): SingleStatsRecord? {
+        val values = linkedMapOf<String, Int>()
+        val points = linkedMapOf<String, Int>()
+        SINGLE_STAT_LABELS.forEach { (label, key) ->
+            val labelLine = lines.firstOrNull { it.text.replace(" ", "").contains(label) } ?: return@forEach
+            val sameLine = Regex("""\d{1,3}""").findAll(labelLine.text)
+                .mapNotNull { it.value.toIntOrNull() }.filter { it in 0..999 }.toList()
+            val rightLineNumbers = lines
+                .filter { line ->
+                    line !== labelLine && line.left > labelLine.right &&
+                        line.top < labelLine.bottom && line.bottom > labelLine.top &&
+                        line.left < labelLine.right + (labelLine.right - labelLine.left) * 6
+                }
+                .sortedBy { it.left }
+                .flatMap { line ->
+                    Regex("""\d{1,3}""").findAll(line.text).mapNotNull { it.value.toIntOrNull() }
+                        .filter { it in 0..999 }.toList()
+                }
+            val numbers = sameLine + rightLineNumbers
+            if (numbers.isEmpty()) return@forEach
+            values[key] = numbers.first()
+            numbers.getOrNull(1)?.takeIf { it in 0..32 }?.let { points[key] = it }
+        }
+        if (values.size < 4) return null
+        val actual = StatFields(
+            hp = values["hp"]?.toString() ?: "",
+            atk = values["atk"]?.toString() ?: "",
+            def = values["def"]?.toString() ?: "",
+            spa = values["spa"]?.toString() ?: "",
+            spd = values["spd"]?.toString() ?: "",
+            spe = values["spe"]?.toString() ?: "",
+        )
+        val allocated = StatFields(
+            hp = points["hp"]?.toString() ?: "0",
+            atk = points["atk"]?.toString() ?: "0",
+            def = points["def"]?.toString() ?: "0",
+            spa = points["spa"]?.toString() ?: "0",
+            spd = points["spd"]?.toString() ?: "0",
+            spe = points["spe"]?.toString() ?: "0",
+        )
+        return SingleStatsRecord(actual, allocated)
+    }
+
+    private fun recognizeSingleStatsWithMlKit(bitmap: Bitmap): SingleStatsRecord {
+        val text = Tasks.await(
+            recognizer.process(InputImage.fromBitmap(bitmap, 0)),
+            30,
+            TimeUnit.SECONDS,
+        )
+        val values = linkedMapOf<String, Int>()
+        val points = linkedMapOf<String, Int>()
+        text.textBlocks.flatMap { block -> block.lines }.forEach { line ->
+            val tokens = line.elements.mapNotNull { element ->
+                element.boundingBox?.let { Token(element.text.replace(" ", ""), it) }
+            }.filter { it.text.isNotBlank() }
+            val labelIndex = tokens.indexOfFirst { token ->
+                SINGLE_STAT_LABELS.any { label -> token.text.contains(label.first) }
+            }
+            if (labelIndex < 0) return@forEach
+            val key = SINGLE_STAT_LABELS.first { (label, _) -> tokens[labelIndex].text.contains(label) }.second
+            if (values.containsKey(key)) return@forEach
+            val labelTokenNumbers = Regex("""\d{1,3}""").findAll(tokens[labelIndex].text)
+                .mapNotNull { it.value.toIntOrNull() }.toList()
+            val rightNumbers = tokens.drop(labelIndex + 1)
+                .flatMap { token -> Regex("""\d{1,3}""").findAll(token.text).mapNotNull { it.value.toIntOrNull() }.toList() }
+            val numbers = (labelTokenNumbers + rightNumbers).filter { it in 0..999 }
+            if (numbers.isEmpty()) return@forEach
+            values[key] = numbers.first()
+            numbers.getOrNull(1)?.takeIf { it in 0..32 }?.let { points[key] = it }
+        }
+        if (values.size < 4) {
+            android.util.Log.i(
+                "OwnTeamOcr",
+                "Single stats OCR lines: " + text.textBlocks.flatMap { block -> block.lines }
+                    .take(20).joinToString(" | ") { it.text },
+            )
+            error("没有识别到能力值面板")
+        }
+        val actual = StatFields(
+            hp = values["hp"]?.toString() ?: "",
+            atk = values["atk"]?.toString() ?: "",
+            def = values["def"]?.toString() ?: "",
+            spa = values["spa"]?.toString() ?: "",
+            spd = values["spd"]?.toString() ?: "",
+            spe = values["spe"]?.toString() ?: "",
+        )
+        val allocated = StatFields(
+            hp = points["hp"]?.toString() ?: "0",
+            atk = points["atk"]?.toString() ?: "0",
+            def = points["def"]?.toString() ?: "0",
+            spa = points["spa"]?.toString() ?: "0",
+            spd = points["spd"]?.toString() ?: "0",
+            spe = points["spe"]?.toString() ?: "0",
+        )
+        return SingleStatsRecord(actual, allocated)
     }
 
     private fun recognizeBlocking(
@@ -786,7 +967,7 @@ private fun pickNumber(card: OcrCard, region: DoubleArray, stat: String): Int? {
         .thenBy { it.third }.thenByDescending { it.first }).firstOrNull()?.first
 }
 
-private class EntityCatalog(context: Context) {
+internal class EntityCatalog(context: Context) {
     private data class Alias(val normalized: String, val exactLocalized: Boolean, val entity: RecognitionEntity)
     private val byType: Map<String, List<Alias>>
 
@@ -817,6 +998,15 @@ private class EntityCatalog(context: Context) {
             }
         }
         byType = mutable
+    }
+
+    /**
+     * 用词库里“宝可梦/招式/特性/道具”的正式名称纠正 OCR 结果：
+     * 完全同名或只差一个字时返回正式名，否则返回 null。
+     */
+    fun correctToOfficialName(rawText: String, entityType: String): String? {
+        val entity = resolve(rawText, entityType) ?: return null
+        return entity.displayName.takeIf { entity.confidence >= 0.70 }
     }
 
     fun resolve(rawText: String, type: String): RecognitionEntity? {
@@ -948,14 +1138,14 @@ class OwnTeamImportRepository(private val context: Context) {
         val stats = statsPage
         when (nextOwnTeamImportStep(move, stats)) {
             OwnTeamImportNextStep.CAPTURE_MOVE_ITEM -> return ImportSaveResult(
-                "能力值页面已识别，请继续识别同一支队伍的“招式与道具”页面",
+                "能力值页面已识别，可用它直接开始计算；需要更精确时再识别“招式与道具”页补全招式与特性",
                 nextStep = OwnTeamImportNextStep.CAPTURE_MOVE_ITEM,
             )
             OwnTeamImportNextStep.CAPTURE_STATS -> return ImportSaveResult(
                 if (updated.restarted) {
-                    "检测到另一支队伍的“招式与道具”页面，已重新开始录入；请继续识别它的“能力值”页面"
+                    "检测到另一支队伍的“招式与道具”页面，已重新开始录入；可继续识别它的“能力值”页面，也可以直接开始计算"
                 } else {
-                    "“招式与道具”页面已识别，请继续识别同一支队伍的“能力值”页面"
+                    "“招式与道具”页面已记录；可继续识别同一支队伍的“能力值”页面补全能力值，也可以直接开始计算"
                 },
                 nextStep = OwnTeamImportNextStep.CAPTURE_STATS,
             )
@@ -982,6 +1172,11 @@ class OwnTeamImportRepository(private val context: Context) {
     }
 
     fun hasPendingTeam(): Boolean = context.filesDir.resolve(PENDING_FILE).isFile
+
+    fun hasStatsPage(): Boolean {
+        syncDraftState()
+        return statsPage != null
+    }
 
     fun discardCurrentImport() {
         discardOwnTeamImportFiles(context.filesDir)
@@ -1031,6 +1226,32 @@ class OwnTeamImportRepository(private val context: Context) {
         return ImportSaveResult("队伍“$name”已修正并保存，可在首页和计算页使用", fileName, saved)
     }
 
+    /**
+     * 两张页面都在时直接生成队伍并保存，不要求每只宝可梦的字段都识别完整。
+     * 缺的字段由调用方事后按图鉴默认补齐。
+     */
+    fun saveCurrentImportLenient(teamName: String): ImportSaveResult {
+        val name = teamName.trim()
+        require(name.length in 1..30) { "队伍名称需要 1–30 个字符" }
+        syncDraftState()
+        val move = moveItemPage ?: error("还没有识别“招式与道具”页面")
+        val stats = statsPage ?: error("还没有识别“能力值”页面")
+        val now = Instant.now().toString()
+        val saved = JSONObject(createSavedTeam(move, stats).toString()).apply {
+            put("teamName", name)
+            put("teamSlotName", name)
+            put("updatedAt", now)
+        }
+        val fileName = saved.getString("savedTeamId") + ".json"
+        context.filesDir.resolve("saved-teams").resolve(fileName)
+            .writeUtf8Atomically(saved.toString(2))
+        context.filesDir.resolve(DRAFT_FILE).delete()
+        context.filesDir.resolve(PENDING_FILE).delete()
+        moveItemPage = null
+        statsPage = null
+        return ImportSaveResult("队伍“$name”已保存", fileName, saved)
+    }
+
     fun savePendingTeam(teamName: String): ImportSaveResult {
         val name = teamName.trim()
         require(name.isNotEmpty()) { "队伍名称不能为空" }
@@ -1078,6 +1299,54 @@ class OwnTeamImportRepository(private val context: Context) {
             moveItemPage = null
             statsPage = null
         }
+    }
+
+    /** 只识别了“能力值”页时直接入库：招式与特性留空，由调用方按图鉴默认补齐。 */
+    fun saveStatsOnly(name: String): ImportSaveResult {
+        syncDraftState()
+        val stats = statsPage ?: error("还没有识别“能力值”页面")
+        val now = Instant.now()
+        val stamp = DateTimeFormatter.ofPattern("yyyyMMddHHmmss").withZone(ZoneId.systemDefault()).format(now)
+        val savedTeamId = "android-own-team-$stamp"
+        val members = JSONArray()
+        stats.slots.forEach { statSlot ->
+            val species = statSlot.species ?: return@forEach
+            val statsJson = JSONObject().apply { statSlot.actualStats.forEach(::put) }
+            members.put(JSONObject().apply {
+                put("slotIndex", statSlot.slotIndex)
+                put("species", species.toJson())
+                put("level", 50)
+                put("actualStats", statsJson)
+                put("moves", JSONArray())
+                put("build", JSONObject().apply {
+                    put("species", species.toJson())
+                    put("level", 50)
+                    put("actualStats", JSONObject().apply { statSlot.actualStats.forEach(::put) })
+                    put("moves", JSONArray())
+                })
+            })
+        }
+        val saved = JSONObject().apply {
+            put("schemaVersion", 1)
+            put("kind", "SavedOwnTeam")
+            put("savedTeamId", savedTeamId)
+            put("teamName", name)
+            put("teamSlotName", name)
+            put("status", "DAMAGE_READY")
+            put("importStatus", "DAMAGE_READY")
+            put("importSource", "SCREENSHOT_STATS_ONLY")
+            put("damageReady", true)
+            put("userConfirmed", true)
+            put("pokemon", members)
+            put("updatedAt", Instant.now().toString())
+        }
+        val fileName = savedTeamId + ".json"
+        context.filesDir.resolve("saved-teams").resolve(fileName).writeUtf8Atomically(saved.toString(2))
+        context.filesDir.resolve(DRAFT_FILE).delete()
+        context.filesDir.resolve(PENDING_FILE).delete()
+        moveItemPage = null
+        statsPage = null
+        return ImportSaveResult("队伍“$name”已保存（仅能力值）", fileName, saved)
     }
 
     private fun createSavedTeam(move: RecognizedOwnTeamPage, stats: RecognizedOwnTeamPage): JSONObject {
@@ -1211,9 +1480,14 @@ class OwnTeamImportRepository(private val context: Context) {
 private fun normalizeText(value: String): String = Normalizer.normalize(value, Normalizer.Form.NFKC)
     .replace(Regex("\\s+"), "")
 
-private fun normalizeLookup(value: String): String = normalizeText(value)
+private fun normalizeLookup(value: String): String = normalizeText(toSimplified(value))
     .replace("·", "").replace("・", "").replace("’", "").replace("'", "")
     .lowercase(Locale.ROOT)
+
+/** 游戏里偶尔出繁体字形（如「暴鯉龙」），统一转成简体再查词库。 */
+private fun toSimplified(value: String): String = runCatching {
+    android.icu.text.Transliterator.getInstance("Traditional-Simplified").transliterate(value)
+}.getOrDefault(value)
 
 private fun levenshteinWithinOne(left: String, right: String): Boolean {
     if (abs(left.length - right.length) > 1) return false

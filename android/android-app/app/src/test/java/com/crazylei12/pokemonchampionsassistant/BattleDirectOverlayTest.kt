@@ -181,7 +181,7 @@ class BattleDirectOverlayTest {
     fun `saved layout round trips while excluding the fixed edit control`() {
         val placements = mapOf(
             BattleDirectHudElement.SPEED to BattleDirectHudPlacement(0.1f, 0.2f, 0.3f, 0.4f),
-            BattleDirectHudElement.DAMAGE to BattleDirectHudPlacement(0.2f, 0.6f, 0.5f, 0.1f),
+            BattleDirectHudElement.DAMAGE_1 to BattleDirectHudPlacement(0.2f, 0.6f, 0.5f, 0.1f),
             BattleDirectHudElement.OWN_RECOGNITION to BattleDirectHudPlacement(0.7f, 0.02f, 0.1f, 0.05f),
             BattleDirectHudElement.EDIT to BattleDirectHudPlacement(0f, 0f, 1f, 1f),
         )
@@ -332,7 +332,7 @@ class BattleDirectOverlayTest {
         val moves = listOf(move("move.thunderbolt", "Thunderbolt"), move("move.protect", "Protect"), move("move.missing", "Missing"))
 
         assertEquals(
-            listOf("1 42.0–50.1%", "2 —", "3 ?", "4 —"),
+            listOf("42-50｜30-35｜20-24%", "", "", ""),
             parseBattleDirectDamageValues(raw, moves),
         )
     }
@@ -429,10 +429,19 @@ class BattleDirectOverlayTest {
         EntityValue(canonicalId, showdownId, showdownId, "move"),
     )
 
-    private fun result(moveId: String, category: String, minimum: Double, maximum: Double) = JSONObject()
-        .put("moveId", moveId)
-        .put("moveCategory", category)
-        .put("selectedProfileRange", JSONObject().put("minPercent", minimum).put("maxPercent", maximum))
+    private fun result(moveId: String, category: String, minimum: Double, maximum: Double): JSONObject {
+        fun range(min: Double, max: Double) = JSONObject().put("minPercent", min).put("maxPercent", max)
+        return JSONObject()
+            .put("moveId", moveId)
+            .put("moveCategory", category)
+            .put("selectedProfileRange", range(minimum, maximum))
+            .put("profileRanges", JSONArray().apply {
+                put(JSONObject().put("defenderProfileId", TIER_PROFILE_HP2).put("damageRange", range(minimum, maximum)))
+                put(JSONObject().put("defenderProfileId", TIER_PROFILE_HP32).put("damageRange", range(30.0, 35.0)))
+                put(JSONObject().put("defenderProfileId", TIER_PROFILE_PHYSICAL).put("damageRange", range(25.0, 29.0)))
+                put(JSONObject().put("defenderProfileId", TIER_PROFILE_SPECIAL).put("damageRange", range(20.0, 24.0)))
+            })
+    }
 
     private fun bounds(
         region: OverlayBounds,
