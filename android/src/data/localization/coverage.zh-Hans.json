@@ -1,0 +1,75 @@
+{
+  "generatedAt": "2026-09-14T23:22:11.490Z",
+  "smogonDataDir": "external/smogon-damage-calc/calc/src/data",
+  "sourceRepository": "https://github.com/42arch/pokemon-dataset-zh",
+  "sourceFiles": [
+    "simple_pokedex.json",
+    "move_list.json",
+    "ability_list.json",
+    "item_list.json",
+    "LICENSE",
+    "README.md"
+  ],
+  "counts": {
+    "species": 359,
+    "move": 527,
+    "ability": 216,
+    "item": 166,
+    "nature": 25,
+    "type": 20
+  },
+  "missing": {
+    "species": [],
+    "move": [],
+    "ability": [],
+    "item": [],
+    "nature": [],
+    "type": []
+  },
+  "filledBy": {
+    "species": {
+      "source": 226,
+      "override": 7,
+      "builtin": 0,
+      "rule": 126
+    },
+    "move": {
+      "source": 526,
+      "override": 1,
+      "builtin": 0,
+      "rule": 0
+    },
+    "ability": {
+      "source": 208,
+      "override": 8,
+      "builtin": 0,
+      "rule": 0
+    },
+    "item": {
+      "source": 149,
+      "override": 3,
+      "builtin": 0,
+      "rule": 14
+    },
+    "nature": {
+      "source": 0,
+      "override": 0,
+      "builtin": 25,
+      "rule": 0
+    },
+    "type": {
+      "source": 0,
+      "override": 0,
+      "builtin": 20,
+      "rule": 0
+    }
+  },
+  "ruleFallbacks": {
+    "species": [],
+    "move": [],
+    "ability": [],
+    "item": [],
+    "nature": [],
+    "type": []
+  }
+}

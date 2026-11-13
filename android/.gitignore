@@ -1,0 +1,55 @@
+# Local dependencies and outputs
+/node_modules/
+/**/node_modules/
+/.tmp/
+/.android-tools/
+/coverage/
+*.log
+
+# Private development data and captured game images
+/data/
+/dataset/
+/references/
+/docs/pic/
+/drag-test-*.json
+*.zip
+*.7z
+
+# Upstream localization snapshots are fetched locally when regenerating names.
+# Do not publish the unused descriptions and other raw scraped fields.
+/src/data/localization/sources/42arch-pokemon-dataset-zh/simple_pokedex.json
+/src/data/localization/sources/42arch-pokemon-dataset-zh/move_list.json
+/src/data/localization/sources/42arch-pokemon-dataset-zh/ability_list.json
+/src/data/localization/sources/42arch-pokemon-dataset-zh/item_list.json
+
+# Locally generated recognition intermediates. The Android v2 feature pack is a
+# required runtime asset and is tracked under src/data/recognition/android/.
+/src/data/pokemon-icons/assets/
+/src/data/recognition/template-cache/*.pkl
+*.traineddata
+__pycache__/
+*.pyc
+
+# Android and IDE state
+/android-app/.gradle/
+/android-app/local.properties
+/android-app/build/
+/android-app/app/build/
+/.idea/
+/.vscode/
+*.iml
+
+# Signing material and installable packages
+*.apk
+*.aab
+*.jks
+*.keystore
+*.pem
+*.p12
+
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+local.properties
+/tools/team-code-resolver/.private/

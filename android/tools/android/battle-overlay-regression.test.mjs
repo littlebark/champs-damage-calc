@@ -1,0 +1,317 @@
+import assert from 'node:assert/strict';
+import {readFile} from 'node:fs/promises';
+import path from 'node:path';
+import test from 'node:test';
+import vm from 'node:vm';
+import {fileURLToPath} from 'node:url';
+
+const scriptDir = path.dirname(fileURLToPath(import.meta.url));
+const repoRoot = path.resolve(scriptDir, '..', '..');
+
+async function readJson(...segments) {
+  return JSON.parse(await readFile(path.join(repoRoot, ...segments), 'utf8'));
+}
+
+async function loadEngine() {
+  const source = await readFile(
+    path.join(repoRoot, 'android-app', 'app', 'src', 'main', 'assets', 'damage-engine.js'),
+    'utf8'
+  );
+  const context = {window: {}, console};
+  vm.runInNewContext(source, context, {filename: 'damage-engine.js'});
+  return context.window.PokemonChampionsDamageEngine;
+}
+
+function selectedProfile(profile) {
+  return {...profile, isSelected: true, includedInEnvelope: true};
+}
+
+test('Champions preset asset is complete enough for the battle overlay', async () => {
+  const presets = await readJson('src', 'data', 'damage', 'champions-presets.json');
+  assert.equal(presets.schemaVersion, 6);
+  assert.equal(presets.learnsetSource, 'Champions client Master Data v18 waza_learn + waza.available');
+  assert.equal(presets.learnsetVersion, 'c004f8dda04407d4e641a5f881120174cdfa69b659af658bbb5f50a5d5218bea');
+  assert.equal(presets.learnsetRulesetVersion, 'client-v18-c004f8dda044');
+  assert.equal(presets.learnsetPoolSource, 'CHAMPIONS_SNAPSHOT');
+  assert.equal(presets.learnsetDataDate, '2026-09-09');
+  assert.ok(presets.speciesCount >= 160);
+  const upstream = {};
+  vm.runInNewContext(await readFile(path.join(repoRoot, 'external/smogon-damage-calc/src/js/data/sets/champions.js'), 'utf8'), upstream);
+  assert.equal(presets.profileCount, Object.values(upstream.SETDEX_CHAMPIONS).reduce((count, profiles) => count + Object.keys(profiles).length, 0));
+  assert.ok(presets.formGroupCount >= 90);
+  assert.ok(presets.speciesFormCount >= 300);
+  assert.equal(presets.natures.length, 25);
+  const directionalNatures = presets.natures.filter(entry => entry.plus !== entry.minus);
+  assert.equal(directionalNatures.length, 20);
+  assert.equal(new Set(directionalNatures.map(entry => `${entry.plus}:${entry.minus}`)).size, 20);
+  assert.equal(directionalNatures.find(entry => entry.plus === 'atk' && entry.minus === 'spa').nature.showdownId, 'Adamant');
+  assert.equal(directionalNatures.find(entry => entry.plus === 'spd' && entry.minus === 'spa').nature.showdownId, 'Careful');
+  assert.deepEqual(presets.speciesForms.filter(entry => entry.abilities.length === 0), []);
+  assert.deepEqual(presets.speciesForms.filter(entry => !Array.isArray(entry.types) || entry.types.length === 0), []);
+  assert.deepEqual(presets.speciesForms.filter(entry => !entry.typeMatchups), []);
+  assert.deepEqual(presets.speciesForms.filter(entry => entry.defaultAbility && !entry.abilities.some(
+    ability => ability.showdownId === entry.defaultAbility.showdownId
+  )), []);
+  assert.deepEqual(presets.speciesForms.filter(entry => entry.learnableMoves.length === 0), []);
+  assert.deepEqual(presets.speciesForms.filter(entry => entry.learnableMoves.some(
+    move => !presets.moveTypes[move.move.showdownId.toLowerCase().replace(/[^a-z0-9]+/g, '')]
+  )), []);
+  assert.deepEqual(presets.speciesForms.filter(entry => entry.learnableMoves.some(
+    move => move.source !== 'CHAMPIONS_SNAPSHOT'
+  )), []);
+  assert.equal(presets.movePriorities.protect, 4);
+  assert.equal(presets.movePriorities.helpinghand, 5);
+  assert.equal(presets.movePriorities.extremespeed, 2);
+  assert.equal(presets.movePriorities.iceshard, 1);
+
+  const mawileForms = presets.speciesForms.filter(entry => entry.familyId === 'mawile');
+  assert.deepEqual(mawileForms.map(entry => entry.species.showdownId), ['Mawile', 'Mawile-Mega']);
+  const mawile = mawileForms.find(entry => entry.species.showdownId === 'Mawile');
+  const megaMawile = mawileForms.find(entry => entry.species.showdownId === 'Mawile-Mega');
+  assert.equal(mawile.configurationShareGroupId, 'battle.mawile');
+  assert.equal(megaMawile.configurationShareGroupId, 'battle.mawile');
+  assert.equal(megaMawile.defaultAbility.showdownId, 'Huge Power');
+  assert.deepEqual(mawile.abilities.map(entry => entry.showdownId), ['Hyper Cutter', 'Intimidate', 'Sheer Force']);
+  assert.deepEqual(megaMawile.abilities.map(entry => entry.showdownId), ['Huge Power']);
+  assert.deepEqual(megaMawile.types, ['Steel', 'Fairy']);
+  assert.deepEqual(megaMawile.typeMatchups['0'], ['Poison', 'Dragon']);
+  assert.deepEqual(megaMawile.typeMatchups['0.25'], ['Bug']);
+  assert.deepEqual(megaMawile.typeMatchups['2'], ['Fire', 'Ground']);
+  for (const move of ['Play Rough', 'Iron Head', 'Sucker Punch', 'Protect']) {
+    assert.ok(mawile.learnableMoves.some(entry => entry.move.showdownId === move));
+  }
+
+  const inBattleConfigurationGroups = [
+    ['Aegislash-Blade', 'Aegislash-Both', 'Aegislash-Shield'],
+    ['Castform', 'Castform-Rainy', 'Castform-Snowy', 'Castform-Sunny'],
+    ['Mimikyu', 'Mimikyu-Busted'],
+    ['Morpeko', 'Morpeko-Hangry'],
+    ['Palafin', 'Palafin-Hero'],
+  ];
+  for (const speciesIds of inBattleConfigurationGroups) {
+    const forms = speciesIds.map(speciesId => presets.speciesForms.find(
+      entry => entry.species.showdownId === speciesId
+    ));
+    assert.ok(forms.every(Boolean), `missing in-battle forms: ${speciesIds.join(', ')}`);
+    assert.equal(
+      new Set(forms.map(entry => entry.configurationShareGroupId).filter(Boolean)).size,
+      1,
+      `in-battle forms must share one configuration group: ${speciesIds.join(', ')}`
+    );
+    assert.ok(forms.every(entry => entry.configurationShareGroupId));
+  }
+  assert.equal(
+    presets.speciesForms.find(entry => entry.species.showdownId === 'Rotom-Wash').configurationShareGroupId,
+    undefined
+  );
+  assert.equal(
+    presets.speciesForms.find(entry => entry.species.showdownId === 'Slowbro-Galar').configurationShareGroupId,
+    undefined
+  );
+
+  const staraptor = presets.speciesForms.find(entry => entry.species.showdownId === 'Staraptor');
+  const staraptorMoves = new Set(staraptor.learnableMoves.map(entry => entry.move.showdownId));
+  assert.ok(staraptorMoves.has('Blaze Kick'));
+  assert.ok(!staraptorMoves.has('Toxic'));
+
+  const floetteMega = presets.speciesForms.find(entry => entry.species.showdownId === 'Floette-Mega');
+  const floetteMegaMoves = new Set(floetteMega.learnableMoves.map(entry => entry.move.showdownId));
+  for (const move of ['Copycat', 'Hyper Beam', 'Light of Ruin', 'Tearful Look']) {
+    assert.ok(floetteMegaMoves.has(move), `Floette-Mega should learn ${move}`);
+  }
+  assert.ok(!floetteMegaMoves.has('Toxic'));
+
+  const incineroar = presets.speciesForms.find(entry => entry.species.showdownId === 'Incineroar');
+  const incineroarMoves = new Set(incineroar.learnableMoves.map(entry => entry.move.showdownId));
+  assert.ok(!incineroarMoves.has('Knock Off'));
+  assert.ok(!incineroarMoves.has('U-turn'));
+
+  const archaludon = presets.speciesForms.find(entry => entry.species.showdownId === 'Archaludon');
+  const archaludonMoves = new Set(archaludon.learnableMoves.map(entry => entry.move.showdownId));
+  assert.ok(!archaludonMoves.has('Body Press'));
+
+  const legalMoveIdsBySpecies = new Map(presets.speciesForms.map(form => [
+    form.species.showdownId.toLowerCase().replace(/[^a-z0-9]+/g, ''),
+    new Set(form.learnableMoves.map(entry => entry.move.showdownId.toLowerCase().replace(/[^a-z0-9]+/g, ''))),
+  ]));
+  const illegalProfileMoves = presets.species.flatMap(speciesEntry => {
+    const speciesId = speciesEntry.species.showdownId.toLowerCase().replace(/[^a-z0-9]+/g, '');
+    const legalMoveIds = legalMoveIdsBySpecies.get(speciesId) || new Set();
+    return speciesEntry.profiles.flatMap(profile => profile.moves
+      .filter(entry => !legalMoveIds.has(entry.move.showdownId.toLowerCase().replace(/[^a-z0-9]+/g, '')))
+      .map(entry => `${speciesEntry.species.showdownId}:${profile.profileId}:${entry.move.showdownId}`));
+  });
+  assert.deepEqual(illegalProfileMoves, []);
+
+  const gardevoirForm = presets.speciesForms.find(entry => entry.species.showdownId === 'Gardevoir');
+  assert.ok(gardevoirForm.learnableMoves.length >= 50);
+  assert.equal(presets.moveTypes.armorcannon, 'Fire');
+  assert.equal(presets.moveTypes.psychic, 'Psychic');
+  assert.equal(
+    new Set(gardevoirForm.learnableMoves.map(entry => entry.move.showdownId)).size,
+    gardevoirForm.learnableMoves.length
+  );
+
+  const newMegaAbilityChecks = [
+    ['Clefable-Mega', 'Magic Bounce'],
+    ['Delphox-Mega', 'Levitate'],
+    ['Excadrill-Mega', 'Piercing Drill'],
+    ['Feraligatr-Mega', 'Dragonize'],
+  ];
+  for (const [species, ability] of newMegaAbilityChecks) {
+    const form = presets.speciesForms.find(entry => entry.species.showdownId === species);
+    assert.deepEqual(form.abilities.map(entry => entry.showdownId), [ability]);
+  }
+
+  const sinistcha = presets.species.find(entry => entry.species.showdownId === 'Sinistcha');
+  assert.ok(sinistcha);
+  assert.equal(sinistcha.profiles.length, Object.keys(upstream.SETDEX_CHAMPIONS.Sinistcha).length);
+  assert.ok(sinistcha.profiles.some(profile => profile.moves.some(move => move.move.showdownId === 'Matcha Gotcha')));
+  assert.equal(
+    sinistcha.profiles.flatMap(profile => profile.moves).find(move => move.move.showdownId === 'Matcha Gotcha').basePower,
+    80
+  );
+  assert.equal(presets.moveTypes.matchagotcha, 'Grass');
+  assert.deepEqual(
+    presets.species.find(entry => entry.species.showdownId === 'Gardevoir').profiles[0].actualStats,
+    {hp: 175, atk: 76, def: 87, spa: 194, spd: 135, spe: 100}
+  );
+});
+
+test('manual Mega form uses the transformed species, stats, and ability', async () => {
+  const engine = await loadEngine();
+  const presets = await readJson('src', 'data', 'damage', 'champions-presets.json');
+  const gardevoir = presets.species.find(entry => entry.species.showdownId === 'Gardevoir');
+  const profile = selectedProfile(gardevoir.profiles[0]);
+  const mawileForms = presets.speciesForms.filter(entry => entry.familyId === 'mawile');
+  const base = mawileForms.find(entry => entry.species.showdownId === 'Mawile');
+  const mega = mawileForms.find(entry => entry.species.showdownId === 'Mawile-Mega');
+
+  function request(form, actualStats, ability) {
+    return {
+      requestId: `battle-overlay-${form.species.showdownId}`,
+      calculationDirection: 'OWN_TO_OPPONENT',
+      attackerSide: 'OWN',
+      defenderSide: 'OPPONENT',
+      attacker: {
+        species: form.species,
+        level: 50,
+        actualStats,
+        ability,
+        item: {entityType: 'item', canonicalId: 'item.mawilite', showdownId: 'Mawilite', displayName: '大嘴娃进化石'},
+        moves: [{move: {entityType: 'move', canonicalId: 'move.playrough', showdownId: 'Play Rough', displayName: '嬉闹'}, source: 'OWN_BUILD'}],
+      },
+      defenderIdentity: {species: gardevoir.species},
+      defenderProfileSet: {
+        defenderSpecies: gardevoir.species,
+        selectedProfileId: profile.profileId,
+        profiles: [profile],
+      },
+      moveSelection: {mode: 'ONE_MOVE', moveId: 'Play Rough'},
+      battle: {battleType: 'DOUBLE', weather: 'NONE', terrain: 'NONE'},
+      calculationMode: 'TEMPLATE',
+    };
+  }
+
+  const baseResult = JSON.parse(engine.calculateDamage(JSON.stringify(request(
+    base,
+    {hp: 157, atk: 150, def: 105, spa: 75, spd: 77, spe: 63},
+    base.defaultAbility
+  ))));
+  const megaResult = JSON.parse(engine.calculateDamage(JSON.stringify(request(
+    mega,
+    {hp: 157, atk: 172, def: 145, spa: 75, spd: 117, spe: 63},
+    mega.defaultAbility
+  ))));
+  assert.equal(baseResult.ok, true);
+  assert.equal(megaResult.ok, true);
+  assert.equal(megaResult.result.attackerSummary.speciesName, '超级大嘴娃');
+  assert.ok(
+    megaResult.result.moveResults[0].selectedProfileRange.maxDamage >
+      baseResult.result.moveResults[0].selectedProfileRange.maxDamage
+  );
+});
+
+test('confirmed opponent identity and preset calculate own output offline', async () => {
+  const engine = await loadEngine();
+  const ownTeam = await readJson('test', 'fixtures', 'saved-team.synthetic.json');
+  const presets = await readJson('src', 'data', 'damage', 'champions-presets.json');
+  const gardevoir = presets.species.find(entry => entry.species.showdownId === 'Gardevoir');
+  const profile = selectedProfile(gardevoir.profiles[0]);
+  const attacker = ownTeam.pokemon[0];
+  const request = {
+    requestId: 'battle-overlay-own-output',
+    calculationDirection: 'OWN_TO_OPPONENT',
+    attackerSide: 'OWN',
+    defenderSide: 'OPPONENT',
+    attacker,
+    defenderIdentity: {species: gardevoir.species},
+    defenderProfileSet: {
+      defenderSpecies: gardevoir.species,
+      selectedProfileId: profile.profileId,
+      profiles: [profile],
+    },
+    moveSelection: {mode: 'ONE_MOVE', moveId: attacker.moves[0].move.showdownId},
+    battle: {battleType: 'DOUBLE', weather: 'NONE', terrain: 'NONE'},
+    calculationMode: 'TEMPLATE',
+  };
+  const response = JSON.parse(engine.calculateDamage(JSON.stringify(request)));
+  assert.equal(response.ok, true);
+  assert.equal(response.result.calculationDirection, 'OWN_TO_OPPONENT');
+  assert.equal(response.result.defenderIdentity.species.showdownId, 'Gardevoir');
+  assert.equal(response.result.selectedDefenderProfile.profileId, profile.profileId);
+  assert.equal(response.result.moveResults.length, 1);
+});
+
+test('opponent preset moves stay first while the Champions learnset remains legal', async () => {
+  const engine = await loadEngine();
+  const ownTeam = await readJson('test', 'fixtures', 'saved-team.synthetic.json');
+  const presets = await readJson('src', 'data', 'damage', 'champions-presets.json');
+  const gardevoir = presets.species.find(entry => entry.species.showdownId === 'Gardevoir');
+  const profile = selectedProfile(gardevoir.profiles[0]);
+  const form = presets.speciesForms.find(entry => entry.species.showdownId === 'Gardevoir');
+  const orderedMoveEntries = [...profile.moves, ...form.learnableMoves];
+  const legalMoves = [...new Map(
+    orderedMoveEntries.map(entry => [entry.move.showdownId, entry.move])
+  ).values()];
+  assert.deepEqual(
+    legalMoves.slice(0, profile.moves.length).map(entry => entry.showdownId),
+    profile.moves.map(entry => entry.move.showdownId)
+  );
+  assert.ok(legalMoves.length > profile.moves.length);
+  const selectedMove = legalMoves[0];
+  const request = {
+    requestId: 'battle-overlay-opponent-output',
+    calculationDirection: 'OPPONENT_TO_OWN',
+    attackerSide: 'OPPONENT',
+    defenderSide: 'OWN',
+    attackerIdentity: {species: gardevoir.species},
+    attackerProfileSet: {
+      attackerSpecies: gardevoir.species,
+      selectedProfileId: profile.profileId,
+      profiles: [profile],
+    },
+    attackerLegalMovePool: {
+      species: gardevoir.species,
+      rulesetVersion: 'pkmn-mods-champions-0.10.11',
+      source: 'CHAMPIONS_SNAPSHOT',
+      learnableMoves: legalMoves,
+    },
+    defender: ownTeam.pokemon[0],
+    moveSelection: {
+      mode: 'ONE_MOVE',
+      moveId: selectedMove.showdownId,
+      source: 'OPPONENT_LEGAL_MOVE_POOL',
+      legalMovePoolVersion: 'pkmn-mods-champions-0.10.11',
+    },
+    battle: {battleType: 'DOUBLE', weather: 'NONE', terrain: 'NONE'},
+    calculationMode: 'TEMPLATE',
+  };
+  const response = JSON.parse(engine.calculateDamage(JSON.stringify(request)));
+  assert.equal(response.ok, true);
+  assert.equal(response.result.calculationDirection, 'OPPONENT_TO_OWN');
+  assert.equal(response.result.selectedAttackerProfile.profileId, profile.profileId);
+  assert.equal(response.result.moveResults.length, 1);
+  assert.equal(response.result.moveResults[0].moveSource, 'PROFILE_PRESET');
+  assert.ok(!response.result.warnings.some(warning => warning.code === 'LEGAL_MOVE_POOL_MISSING'));
+});

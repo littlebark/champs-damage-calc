@@ -1,0 +1,29 @@
+{
+  "_comment": "Champions 覆盖层：与主系列不同的种族值/属性/招式改动/可学招式限制，查询时优先于 Showdown 基础数据。正式数据可从 op.gg/pokemon-champions 图鉴、champsdex 补丁表抓取后填入。",
+  "species": {
+    "炽焰咆哮虎": {
+      "name": "Incineroar",
+      "types": ["Fire", "Dark"],
+      "baseStats": {"hp": 95, "atk": 115, "def": 90, "spa": 80, "spd": 90, "spe": 60},
+      "abilities": ["Intimidate"],
+      "note": "冠军环境移除拍落、虫返等招式（见 learnset 限制）"
+    },
+    "西狮海壬": {
+      "name": "Primarina",
+      "types": ["Water", "Fairy"],
+      "baseStats": {"hp": 80, "atk": 74, "def": 74, "spa": 126, "spd": 116, "spe": 60}
+    },
+    "烈咬陆鲨": {
+      "name": "Garchomp",
+      "types": ["Dragon", "Ground"],
+      "baseStats": {"hp": 108, "atk": 130, "def": 95, "spa": 80, "spd": 85, "spe": 102}
+    }
+  },
+  "moves": {
+    "闪焰冲锋": {"type": "Fire", "category": "Physical", "basePower": 120},
+    "月亮之力": {"type": "Fairy", "category": "Special", "basePower": 95, "accuracy": 100}
+  },
+  "learnset": {
+    "Incineroar": {"allowed": ["Fake Out", "Parting Shot", "Flare Blitz", "Darkest Lariat"], "banned": ["Knock Off", "U-turn"]}
+  }
+}

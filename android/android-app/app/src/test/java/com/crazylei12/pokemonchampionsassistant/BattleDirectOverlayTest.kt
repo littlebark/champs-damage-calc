@@ -1,0 +1,448 @@
+package com.crazylei12.pokemonchampionsassistant
+
+import org.json.JSONArray
+import org.json.JSONObject
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertTrue
+import org.junit.Test
+import kotlin.math.abs
+import kotlin.math.roundToInt
+
+class BattleDirectOverlayTest {
+    @Test
+    fun `every hud element stays inside safe regions at different resolutions`() {
+        val regions = listOf(
+            OverlayBounds(0, 0, 3392, 2400),
+            OverlayBounds(0, 80, 2400, 1080),
+            OverlayBounds(48, 96, 2512, 1536),
+            OverlayBounds(1236, 80, 2400, 1080),
+        )
+
+        regions.forEach { region ->
+            BattleDirectHudLayout.anchors.values.forEach { anchor ->
+                val bounds = resolveBattleDirectHudBounds(region, anchor, desiredWidth = 300, desiredHeight = 96)
+                assertTrue(bounds.left >= region.left)
+                assertTrue(bounds.top >= region.top)
+                assertTrue(bounds.right <= region.right)
+                assertTrue(bounds.bottom <= region.bottom)
+            }
+        }
+    }
+
+    @Test
+    fun `matchup lane reuses the roi game viewport across aspect ratios`() {
+        val displays = listOf(
+            OverlayBounds(0, 0, 1600, 1200),
+            OverlayBounds(0, 0, 1920, 1200),
+            OverlayBounds(0, 0, 1920, 1080),
+            OverlayBounds(0, 0, 2772, 1240),
+            OverlayBounds(0, 0, 3392, 2400),
+            OverlayBounds(0, 0, 3440, 1440),
+        )
+        val anchor = requireNotNull(BattleDirectHudLayout.anchors[BattleDirectHudElement.MATCHUP])
+
+        displays.forEach { display ->
+            val roiViewport = centeredTeamPreviewViewport(display.width, display.height, 16.0 / 9.0)
+            val viewport = battleDirectGameViewport(display)
+            assertEquals(
+                OverlayBounds(
+                    display.left + roiViewport.left,
+                    display.top + roiViewport.top,
+                    display.left + roiViewport.left + roiViewport.width,
+                    display.top + roiViewport.top + roiViewport.height,
+                ),
+                viewport,
+            )
+            val bounds = resolveBattleDirectHudBounds(
+                viewport,
+                anchor,
+                desiredWidth = 244,
+                desiredHeight = battleDirectTypeMatchupHeight(viewport),
+                safeRegion = display,
+            )
+
+            assertEquals(viewport.left + (viewport.width * 0.421f).roundToInt(), bounds.left)
+            assertEquals(viewport.top + (viewport.height * 0.148f).roundToInt(), bounds.top)
+            assertEquals((viewport.width * 0.382f).roundToInt(), bounds.width)
+            assertEquals((viewport.height * 0.67f).roundToInt(), bounds.height)
+            assertTrue(abs((viewport.left - display.left) - (display.right - viewport.right)) <= 1)
+            assertTrue(abs((viewport.top - display.top) - (display.bottom - viewport.bottom)) <= 1)
+        }
+    }
+
+    @Test
+    fun `matchup slots preserve preview height and vertical gaps`() {
+        val slots = battleDirectTypeMatchupSlotWeights()
+
+        assertEquals(6, slots.size)
+        slots.forEach { assertEquals(9f, it.content, 0.0001f) }
+        slots.dropLast(1).forEach { assertEquals(2.6f, it.gapAfter, 0.0001f) }
+        assertEquals(0f, slots.last().gapAfter, 0.0001f)
+        assertEquals(67f, slots.sumOf { (it.content + it.gapAfter).toDouble() }.toFloat(), 0.0001f)
+    }
+
+    @Test
+    fun `hud toggle follows the top dock anchor inside the current safe region`() {
+        val region = OverlayBounds(1236, 80, 2400, 1080)
+        val bounds = resolveBattleDirectHudBounds(
+            region,
+            requireNotNull(BattleDirectHudLayout.anchors[BattleDirectHudElement.TOGGLE]),
+            desiredWidth = 172,
+            desiredHeight = 60,
+        )
+        val expectedCenter = region.left + (region.width * 0.465f).roundToInt()
+
+        assertTrue(abs((bounds.left + bounds.width / 2) - expectedCenter) <= 1)
+        assertEquals(region.top + (region.height * 0.015f).roundToInt(), bounds.top)
+    }
+
+    @Test
+    fun `opponent assumption no longer overlaps the right picker or details button`() {
+        val region = OverlayBounds(0, 0, 2400, 1080)
+        val assumption = bounds(region, BattleDirectHudElement.ASSUMPTION, width = 336, height = 96)
+        val rightPicker = bounds(region, BattleDirectHudElement.OPPONENT_RIGHT, width = 510, height = 114)
+        val details = bounds(region, BattleDirectHudElement.DETAIL, width = 192, height = 102)
+
+        assertEquals(0L, assumption.intersectionArea(rightPicker))
+        assertEquals(0L, assumption.intersectionArea(details))
+        assertEquals(
+            listOf("战场状态", "编辑对手配置", "速度线"),
+            BattleDirectHudSection.values().map(BattleDirectHudSection::label),
+        )
+        assertEquals("对战设置 ▾", BATTLE_DIRECT_HUD_SETTINGS_LABEL)
+        assertEquals("完整面板", BATTLE_DIRECT_HUD_FULL_PANEL_LABEL)
+    }
+
+    @Test
+    fun `top hud controls form a clear dock before the opponent cards`() {
+        val region = OverlayBounds(0, 0, 2772, 1240)
+        val edit = bounds(region, BattleDirectHudElement.EDIT, width = 192, height = 90)
+        val rematch = bounds(region, BattleDirectHudElement.REMATCH, width = 192, height = 90)
+        val toggle = bounds(region, BattleDirectHudElement.TOGGLE, width = 252, height = 90)
+        val format = bounds(region, BattleDirectHudElement.FORMAT, width = 192, height = 90)
+        val ownRecognition = bounds(region, BattleDirectHudElement.OWN_RECOGNITION, width = 252, height = 90)
+        val opponentLeft = bounds(region, BattleDirectHudElement.OPPONENT_LEFT, width = 532, height = 114)
+
+        assertTrue(edit.right <= rematch.left)
+        assertTrue(rematch.right <= toggle.left)
+        assertTrue(toggle.right <= format.left)
+        assertTrue(format.right <= ownRecognition.left)
+        assertTrue(format.bottom <= opponentLeft.top)
+        assertEquals(toggle.top, ownRecognition.top)
+        // Adjacent controls must not leave the old recording-sized gap.
+        val dock = listOf(edit, rematch, toggle, format, ownRecognition)
+        dock.zipWithNext().forEach { (left, right) ->
+            assertTrue(right.left - left.right < edit.width / 2)
+        }
+    }
+
+    @Test
+    fun `custom placement scales with a different safe region`() {
+        val source = OverlayBounds(100, 50, 1100, 550)
+        val placement = battleDirectHudPlacementFromBounds(
+            source,
+            OverlayBounds(300, 150, 600, 350),
+        )
+        val resolved = resolveBattleDirectHudPlacement(
+            OverlayBounds(20, 30, 2020, 1030),
+            placement,
+            minimumWidth = 100,
+            minimumHeight = 80,
+        )
+
+        assertEquals(BattleDirectHudPlacement(0.2f, 0.2f, 0.3f, 0.4f), placement)
+        assertEquals(OverlayBounds(420, 230, 1020, 630), resolved)
+    }
+
+    @Test
+    fun `custom placement and size are clamped inside the safe region`() {
+        val region = OverlayBounds(100, 200, 1100, 800)
+        val oversizedEdgePlacement = BattleDirectHudPlacement(
+            xFraction = 0.98f,
+            yFraction = 0.99f,
+            widthFraction = 0.4f,
+            heightFraction = 0.5f,
+        )
+        val tinyEdgePlacement = oversizedEdgePlacement.copy(widthFraction = 0.001f, heightFraction = 0.001f)
+
+        assertEquals(
+            OverlayBounds(700, 500, 1100, 800),
+            resolveBattleDirectHudPlacement(region, oversizedEdgePlacement, 100, 80),
+        )
+        assertEquals(
+            OverlayBounds(1000, 720, 1100, 800),
+            resolveBattleDirectHudPlacement(region, tinyEdgePlacement, 100, 80),
+        )
+    }
+
+    @Test
+    fun `saved layout round trips while excluding the fixed edit control`() {
+        val placements = mapOf(
+            BattleDirectHudElement.SPEED to BattleDirectHudPlacement(0.1f, 0.2f, 0.3f, 0.4f),
+            BattleDirectHudElement.DAMAGE to BattleDirectHudPlacement(0.2f, 0.6f, 0.5f, 0.1f),
+            BattleDirectHudElement.OWN_RECOGNITION to BattleDirectHudPlacement(0.7f, 0.02f, 0.1f, 0.05f),
+            BattleDirectHudElement.EDIT to BattleDirectHudPlacement(0f, 0f, 1f, 1f),
+        )
+
+        val restored = decodeBattleDirectHudPlacements(encodeBattleDirectHudPlacements(placements))
+
+        assertEquals(placements - BattleDirectHudElement.EDIT, restored)
+        assertTrue(decodeBattleDirectHudPlacements("not json").isEmpty())
+        assertEquals("landscape", battleDirectHudLayoutProfileKey(OverlayBounds(0, 0, 1200, 700)))
+        assertEquals("portrait", battleDirectHudLayoutProfileKey(OverlayBounds(0, 0, 700, 1200)))
+    }
+
+    @Test
+    fun `legacy layout keeps custom placements but resets the own recognition button`() {
+        val legacy = JSONObject().apply {
+            put("version", 1)
+            put("elements", JSONObject().apply {
+                put("SPEED", JSONObject().put("x", 0.1).put("y", 0.2).put("width", 0.3).put("height", 0.4))
+                put("OWN_RECOGNITION", JSONObject().put("x", 0.42).put("y", 0.09).put("width", 0.1).put("height", 0.05))
+            })
+        }
+
+        val restored = decodeBattleDirectHudPlacements(legacy.toString())
+
+        assertTrue(BattleDirectHudElement.SPEED in restored)
+        assertFalse(BattleDirectHudElement.OWN_RECOGNITION in restored)
+    }
+
+    @Test
+    fun `legacy recording dock reflows while other placements survive upgrade and save`() {
+        for (version in 1..2) {
+            val placement = BattleDirectHudPlacement(0.2f, 0.3f, 0.1f, 0.05f)
+            val legacy = JSONObject(encodeBattleDirectHudPlacements(
+                BattleDirectHudElement.values().associateWith { placement },
+            )).put("version", version)
+            legacy.getJSONObject("elements").put("RECORDING",
+                JSONObject().put("x", 0.5).put("y", 0.015).put("width", 0.08).put("height", 0.05))
+
+            val restored = decodeBattleDirectHudPlacements(legacy.toString())
+            val reset = setOf(BattleDirectHudElement.EDIT, BattleDirectHudElement.REMATCH,
+                BattleDirectHudElement.TOGGLE, BattleDirectHudElement.FORMAT,
+                BattleDirectHudElement.OWN_RECOGNITION)
+            assertEquals(BattleDirectHudElement.values().toSet() - reset, restored.keys)
+            assertTrue(restored.values.all { it == placement })
+
+            // New custom top positions must survive subsequent saves and loads.
+            val edited = restored + (BattleDirectHudElement.FORMAT to placement)
+            assertEquals(edited, decodeBattleDirectHudPlacements(encodeBattleDirectHudPlacements(edited)))
+        }
+    }
+
+    @Test
+    fun `display slots stay distinct and swapping preserves both active positions`() {
+        assertEquals(listOf(5, 0), normalizeBattleDirectHudSlots(listOf(5, 5), 6))
+        assertEquals(listOf(1, 0), replaceBattleDirectHudSlot(listOf(0, 1), displayIndex = 0, teamSlot = 1))
+        assertEquals(listOf(0, 4), replaceBattleDirectHudSlot(listOf(0, 1), displayIndex = 1, teamSlot = 4))
+        assertEquals(listOf(4, 0), includeBattleDirectHudSlot(listOf(0, 1), selectedSlot = 4, teamSize = 6))
+        assertEquals(listOf(1, 0), prioritizeBattleDirectHudSlot(listOf(0, 1), selectedSlot = 1, teamSize = 6))
+    }
+
+    @Test
+    fun `single and double formats expose the correct battle positions`() {
+        val single = battleDirectHudPickerSpecs("SINGLE")
+        val double = battleDirectHudPickerSpecs("DOUBLE")
+
+        assertEquals(
+            listOf(BattleDirectHudElement.OPPONENT_RIGHT, BattleDirectHudElement.OWN_LEFT),
+            single.map(BattleDirectHudPickerSpec::element),
+        )
+        assertEquals(listOf(0, 0), single.map(BattleDirectHudPickerSpec::displayIndex))
+        assertEquals(listOf(SpeedSide.OPPONENT, SpeedSide.OWN), single.map(BattleDirectHudPickerSpec::side))
+        assertEquals(
+            listOf(
+                BattleDirectHudElement.OPPONENT_LEFT,
+                BattleDirectHudElement.OPPONENT_RIGHT,
+                BattleDirectHudElement.OWN_LEFT,
+                BattleDirectHudElement.OWN_RIGHT,
+            ),
+            double.map(BattleDirectHudPickerSpec::element),
+        )
+        assertEquals(1, battleDirectHudSlotsPerSide("SINGLE"))
+        assertEquals(2, battleDirectHudSlotsPerSide("DOUBLE"))
+    }
+
+    @Test
+    fun `change button stays to the right of own names and to the left of opponent names`() {
+        assertEquals(
+            listOf(
+                BattleDirectHudPickerControl.NAME,
+                BattleDirectHudPickerControl.TEAM_MENU,
+                BattleDirectHudPickerControl.CHANGE,
+            ),
+            battleDirectHudPickerControlOrder(SpeedSide.OWN),
+        )
+        assertEquals(
+            listOf(
+                BattleDirectHudPickerControl.CHANGE,
+                BattleDirectHudPickerControl.NAME,
+                BattleDirectHudPickerControl.TEAM_MENU,
+            ),
+            battleDirectHudPickerControlOrder(SpeedSide.OPPONENT),
+        )
+    }
+
+    @Test
+    fun `form families become generic hud change actions with the current form marked`() {
+        val forms = listOf(
+            EntityValue("species.mawile", "Mawile", "大嘴娃", "species"),
+            EntityValue("species.mawilemega", "Mawile-Mega", "超级大嘴娃", "species"),
+        )
+
+        val options = battleDirectHudFormChangeOptions(forms, currentShowdownId = "Mawile-Mega")
+
+        assertEquals(listOf("form:Mawile", "form:Mawile-Mega"), options.map { it.actionId })
+        assertEquals(listOf("形态", "形态"), options.map { it.sectionLabel })
+        assertEquals(listOf(false, true), options.map { it.selected })
+        assertEquals("Mawile-Mega", battleDirectHudFormShowdownId(options.last().actionId))
+        assertEquals(null, battleDirectHudFormShowdownId("tera:Fairy"))
+        assertTrue(battleDirectHudFormChangeOptions(forms.take(1), "Mawile").isEmpty())
+    }
+
+    @Test
+    fun `vertical speed order contains only the selected four normal-priority pokemon`() {
+        val actions = listOf(
+            action(SpeedSide.OWN, 0, "我一", 180..180),
+            action(SpeedSide.OPPONENT, 1, "对二", 150..190),
+            action(SpeedSide.OWN, 4, "我五", 120..120),
+            action(SpeedSide.OPPONENT, 3, "对四", 80..140),
+            action(SpeedSide.OWN, 2, "未上场", 200..200),
+            action(SpeedSide.OWN, 0, "先制招式", 180..180, moveName = "突袭", priority = 1),
+        )
+
+        val visible = activeBattleDirectSpeedActions(actions, ownSlots = listOf(0, 4), opponentSlots = listOf(1, 3))
+
+        assertEquals(listOf("我一", "对二", "我五", "对四"), visible.map(SpeedLineAction::pokemonName))
+        assertTrue(battleDirectSpeedRangesOverlap(180..180, 150..190))
+        assertTrue(!battleDirectSpeedRangesOverlap(120..120, 80..110))
+    }
+
+    @Test
+    fun `four-move damage output follows configured move order and marks status or missing slots`() {
+        val raw = JSONObject().put("ok", true).put("result", JSONObject().put(
+            "moveResults",
+            JSONArray()
+                .put(result("move.protect", "Status", 0.0, 0.0))
+                .put(result("move.thunderbolt", "Special", 42.04, 50.06)),
+        )).toString()
+        val moves = listOf(move("move.thunderbolt", "Thunderbolt"), move("move.protect", "Protect"), move("move.missing", "Missing"))
+
+        assertEquals(
+            listOf("1 42.0–50.1%", "2 —", "3 ?", "4 —"),
+            parseBattleDirectDamageValues(raw, moves),
+        )
+    }
+
+    @Test
+    fun `routine hud state changes reuse existing overlay windows`() {
+        val base = hudModel()
+
+        assertFalse(shouldRebuildBattleDirectHudWindows(base, base.copy(selectedOwnSlot = 1), false, true))
+        assertFalse(shouldRebuildBattleDirectHudWindows(base, base.copy(selectedAssumptionId = "bulk"), false, true))
+        assertFalse(shouldRebuildBattleDirectHudWindows(
+            base,
+            base.copy(ownChangeOptions = mapOf(0 to listOf(BattleDirectHudChangeOption(
+                actionId = "form:Mawile-Mega",
+                sectionLabel = "形态",
+                label = "超级大嘴娃",
+                selected = true,
+            )))),
+            false,
+            true,
+        ))
+        assertTrue(shouldRebuildBattleDirectHudWindows(base, base.copy(battleType = "SINGLE"), false, true))
+        assertTrue(shouldRebuildBattleDirectHudWindows(base, base.copy(mode = BattleDirectHudMode.HIDDEN), false, true))
+        assertTrue(shouldRebuildBattleDirectHudWindows(
+            base,
+            base.copy(ownTeamRecognition = OwnTeamRecognitionHudState(
+                buttonLabel = "识别中…",
+                message = "正在识别，最长等待 90 秒",
+                inProgress = true,
+            )),
+            false,
+            true,
+        ))
+        assertTrue(shouldRebuildBattleDirectHudWindows(base, base, true, true))
+        assertTrue(shouldRebuildBattleDirectHudWindows(base, base, false, false))
+    }
+
+    @Test
+    fun `hud mode cycles through matchup calculation and hidden with matching labels`() {
+        assertEquals(BattleDirectHudMode.CALCULATION, nextBattleDirectHudMode(BattleDirectHudMode.TYPE_MATCHUP))
+        assertEquals(BattleDirectHudMode.HIDDEN, nextBattleDirectHudMode(BattleDirectHudMode.CALCULATION))
+        assertEquals(BattleDirectHudMode.TYPE_MATCHUP, nextBattleDirectHudMode(BattleDirectHudMode.HIDDEN))
+        assertEquals("切换计算", battleDirectHudToggleLabel(true, BattleDirectHudMode.TYPE_MATCHUP))
+        assertEquals("隐藏 HUD", battleDirectHudToggleLabel(true, BattleDirectHudMode.CALCULATION))
+        assertEquals("显示 HUD", battleDirectHudToggleLabel(true, BattleDirectHudMode.HIDDEN))
+        assertEquals("等待阵容", battleDirectHudToggleLabel(false, BattleDirectHudMode.TYPE_MATCHUP))
+    }
+
+    @Test
+    fun `enabled hud toggle uses a high contrast amber prompt`() {
+        val enabled = battleDirectHudToggleColors(true)
+        val disabled = battleDirectHudToggleColors(false)
+
+        assertEquals(0xFFF4C542.toInt(), enabled.backgroundColor)
+        assertEquals(0xFF0E141B.toInt(), enabled.textColor)
+        assertNotEquals(disabled, enabled)
+    }
+
+    @Test
+    fun `damage cache ignores request ids but keeps calculation inputs`() {
+        val first = JSONObject().put("requestId", "one").put("attacker", "a").put("defender", "b").toString()
+        val sameInputs = JSONObject().put("requestId", "two").put("attacker", "a").put("defender", "b").toString()
+        val changedTarget = JSONObject().put("requestId", "three").put("attacker", "a").put("defender", "c").toString()
+
+        assertEquals(battleDamageCacheKey(first), battleDamageCacheKey(sameInputs))
+        assertNotEquals(battleDamageCacheKey(first), battleDamageCacheKey(changedTarget))
+    }
+
+    private fun hudModel() = BattleDirectHudModel(
+        battleType = "DOUBLE",
+        ownTeamNames = listOf("我一", "我二"),
+        opponentTeamNames = listOf("对一", "对二"),
+        ownSlots = listOf(0, 1),
+        opponentSlots = listOf(0, 1),
+        selectedOwnSlot = 0,
+        selectedOpponentSlot = 0,
+        speedActions = emptyList(),
+        trickRoom = false,
+        statusText = "状态：默认",
+        assumptionOptions = listOf(BattleDirectHudPresetOption("default", "默认")),
+        selectedAssumptionId = "default",
+    )
+
+    private fun action(
+        side: SpeedSide,
+        slot: Int,
+        name: String,
+        speed: IntRange,
+        moveName: String? = null,
+        priority: Int = 0,
+    ) = SpeedLineAction(side, slot, name, moveName, priority, speed, exactBaseSpeed = speed.first == speed.last)
+
+    private fun move(canonicalId: String, showdownId: String) = MoveValue(
+        EntityValue(canonicalId, showdownId, showdownId, "move"),
+    )
+
+    private fun result(moveId: String, category: String, minimum: Double, maximum: Double) = JSONObject()
+        .put("moveId", moveId)
+        .put("moveCategory", category)
+        .put("selectedProfileRange", JSONObject().put("minPercent", minimum).put("maxPercent", maximum))
+
+    private fun bounds(
+        region: OverlayBounds,
+        element: BattleDirectHudElement,
+        width: Int,
+        height: Int,
+    ) = resolveBattleDirectHudBounds(
+        region,
+        requireNotNull(BattleDirectHudLayout.anchors[element]),
+        desiredWidth = width,
+        desiredHeight = height,
+    )
+}

@@ -1,0 +1,625 @@
+<!DOCTYPE html>
+<html lang="zh-Hans">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>宝可梦冠军 伤害计算器</title>
+<style>
+  :root {
+    --bg: #f4f5f7;
+    --card: #ffffff;
+    --line: #e2e4e9;
+    --text: #1f2329;
+    --muted: #6b7280;
+    --atk: #c2410c;
+    --atk-bg: #fff7ed;
+    --def: #1d4ed8;
+    --def-bg: #eff6ff;
+    --ok: #15803d;
+    --radius: 14px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    font-size: 15px; line-height: 1.5;
+  }
+  .wrap { max-width: 880px; margin: 0 auto; padding: 16px 14px 64px; }
+  header { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px; }
+  header h1 { font-size: 18px; margin: 0; }
+  header .sub { color: var(--muted); font-size: 12px; }
+  button { font: inherit; cursor: pointer; }
+  .btn { border: 1px solid var(--line); background: var(--card); border-radius: 10px; padding: 8px 12px; }
+  .btn:hover { background: #f1f2f4; }
+
+  .toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 14px; }
+  .toolbar label { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 13px; }
+  select, input[type="text"], input[type="number"] {
+    font: inherit; border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; background: #fff; width: 100%;
+  }
+  select { width: auto; }
+  input[type="number"] { width: 64px; text-align: center; }
+
+  .seg { display: inline-flex; gap: 6px; flex-wrap: wrap; }
+  .seg button { border: 1px solid var(--line); background: #fff; border-radius: 8px; padding: 6px 10px; font-size: 13px; }
+  .seg button.on { background: var(--ok); color: #fff; border-color: var(--ok); }
+
+  .board { display: grid; grid-template-columns: 1fr; gap: 14px; }
+  @media (min-width: 768px) { .board { grid-template-columns: 1fr 1fr; } }
+
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+  .card-head { padding: 10px 14px; font-weight: 600; display: flex; justify-content: space-between; align-items: center; }
+  .card.atk .card-head { background: var(--atk-bg); color: var(--atk); }
+  .card.def .card-head { background: var(--def-bg); color: var(--def); }
+  .card-body { padding: 14px; display: flex; flex-direction: column; gap: 12px; }
+
+  .field-row { display: flex; flex-direction: column; gap: 4px; }
+  .field-row > label { font-size: 12px; color: var(--muted); }
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
+  .search-box { position: relative; }
+  .dropdown {
+    position: absolute; z-index: 20; top: calc(100% + 4px); left: 0; right: 0; background: #fff;
+    border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,.12); max-height: 240px; overflow-y: auto;
+  }
+  .dropdown button { display: block; width: 100%; text-align: left; padding: 9px 12px; border: 0; background: #fff; }
+  .dropdown button:hover { background: #f1f5f9; }
+  .dropdown .meta { color: var(--muted); font-size: 12px; }
+
+  .stat-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; }
+  .stat-cell { text-align: center; background: #f7f8fa; border-radius: 8px; padding: 6px 2px; }
+  .stat-cell .k { font-size: 11px; color: var(--muted); }
+  .stat-cell .v { font-weight: 600; }
+
+  .points-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; }
+  .point-cell { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+  .point-cell .k { font-size: 11px; color: var(--muted); }
+
+  .chips { display: flex; flex-wrap: wrap; gap: 10px; }
+  .chips label { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; }
+
+  .types { display: inline-flex; gap: 6px; }
+  .type-tag { font-size: 12px; padding: 2px 8px; border-radius: 999px; background: #eef1f4; }
+
+  .result { margin-top: 14px; background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; }
+  .result h2 { font-size: 15px; margin: 0 0 10px; }
+  .damage-big { font-size: 28px; font-weight: 700; }
+  .damage-big .range { color: var(--text); }
+  .result-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 10px 0; }
+  .result-grid .cell { background: #f7f8fa; border-radius: 10px; padding: 10px; text-align: center; }
+  .result-grid .cell .k { font-size: 12px; color: var(--muted); }
+  .result-grid .cell .v { font-weight: 600; }
+  .tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .tag { font-size: 12px; padding: 3px 9px; border-radius: 999px; background: #eef1f4; }
+  .tag.stab { background: #fef3c7; }
+  .tag.eff { background: #dbeafe; }
+  .breakdown { color: var(--muted); font-size: 13px; margin-top: 8px; }
+  .empty { color: var(--muted); text-align: center; padding: 20px 0; }
+  .note { font-size: 12px; color: var(--muted); }
+
+  .tabs { display: flex; gap: 6px; margin-bottom: 14px; }
+  .tab { border: 1px solid var(--line); background: var(--card); border-radius: 10px; padding: 9px 16px; color: var(--muted); }
+  .tab.on { color: var(--text); font-weight: 600; }
+
+  .poke-grid { display: grid; grid-template-columns: 1fr; gap: 10px; }
+  @media (min-width: 560px) { .poke-grid { grid-template-columns: repeat(2, 1fr); } }
+  @media (min-width: 880px) { .poke-grid { grid-template-columns: repeat(3, 1fr); } }
+  .poke-card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 14px; text-align: left; }
+  .poke-card:hover { background: #f7f8fa; }
+  .poke-card .name { font-weight: 600; }
+  .poke-card .en { color: var(--muted); font-size: 12px; }
+  .poke-card .row { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: 8px; }
+
+  .detail-head { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; margin: 12px 0; }
+  .detail-head .title { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .detail-head .title h2 { margin: 0; font-size: 18px; }
+  .detail-head .en { color: var(--muted); font-size: 13px; }
+  .detail-section-title { font-size: 14px; font-weight: 600; margin: 16px 0 8px; }
+  .stat-row { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; }
+
+  .moves-table { width: 100%; border-collapse: collapse; background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+  .moves-table th, .moves-table td { padding: 8px 10px; border-bottom: 1px solid var(--line); text-align: left; font-size: 13px; }
+  .moves-table th { color: var(--muted); font-weight: 600; }
+  .moves-table td.num, .moves-table th.num { text-align: right; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>宝可梦冠军 伤害计算器</h1>
+      <div class="sub">本地原型 · 数据来自客户端挖掘快照与公开 index</div>
+    </div>
+    <button class="btn" id="swapBtn">攻守互换</button>
+  </header>
+
+  <nav class="tabs">
+    <button class="tab on" data-tab="calc">伤害计算器</button>
+    <button class="tab" data-tab="list">宝可梦列表</button>
+  </nav>
+
+  <div id="viewCalc">
+  <section class="toolbar">
+    <label><input type="checkbox" id="doubles"> 双打</label>
+    <label><input type="checkbox" id="spread"> 多目标</label>
+    <label><input type="checkbox" id="crit"> 暴击</label>
+    <label>天气 <select id="weather"></select></label>
+    <label>场地 <select id="terrain"></select></label>
+  </section>
+
+  <section class="board">
+    <div class="card atk" id="atkCard"></div>
+    <div class="card def" id="defCard"></div>
+  </section>
+
+  <section class="result" id="resultBox">
+    <div class="empty">选择双方宝可梦与招式后自动计算</div>
+  </section>
+  </div>
+
+  <section id="viewList" class="view" hidden>
+    <div class="toolbar">
+      <input type="text" id="listSearch" placeholder="搜索中文名 / 英文名 / 属性">
+    </div>
+    <div class="poke-grid" id="pokeGrid"></div>
+  </section>
+
+  <section id="viewDetail" class="view" hidden>
+    <button class="btn" id="detailBack">返回列表</button>
+    <div id="detailBody"></div>
+  </section>
+</div>
+
+<script>
+const STAT_KEYS = ["hp", "atk", "def", "spa", "spd", "spe"];
+const STAT_LABEL = { hp: "HP", atk: "攻击", def: "防御", spa: "特攻", spd: "特防", spe: "速度" };
+// 需要「自动 / 发动 / 未发动」手动覆盖开关的特性（英文 id → 中文名）
+const TRIGGER_ABILITY_ON = { Analytic: "分析" };
+
+const state = {
+  meta: { natures: [], weathers: [], terrains: [] },
+  itemOptions: [],
+  attacker: blankSide(),
+  defender: blankSide(),
+  tab: "calc",
+  listAll: [],
+  listQuery: "",
+  detail: null,
+};
+
+function blankSide() {
+  return {
+    entry: null, species: "", nature: "坦率",
+    points: { hp: 0, atk: 0, def: 0, spa: 0, spd: 0, spe: 0 },
+    stage: { atk: 0, def: 0, spa: 0, spd: 0 },
+    ability: null, abilityOptions: [], item: null,
+    status: null, helpingHand: false,
+    reflect: false, lightScreen: false, friendGuard: false,
+    gender: "N", abilityOn: null,
+    moves: [], move: null,
+  };
+}
+
+async function api(path, opts) {
+  const r = await fetch(path, opts);
+  const data = await r.json();
+  if (!r.ok) throw new Error(data.error || "请求失败");
+  return data;
+}
+
+async function init() {
+  const [meta, items] = await Promise.all([api("/api/meta"), api("/api/items")]);
+  state.meta = meta;
+  state.itemOptions = items.results;
+  fillSelect("weather", meta.weathers);
+  fillSelect("terrain", meta.terrains);
+  renderSide("atkCard", state.attacker, "atk");
+  renderSide("defCard", state.defender, "def");
+  ["doubles", "spread", "crit", "weather", "terrain"].forEach(id =>
+    document.getElementById(id).addEventListener("change", scheduleCalc));
+  document.getElementById("swapBtn").addEventListener("click", swapSides);
+  document.querySelectorAll(".tab").forEach(btn =>
+    btn.addEventListener("click", () => switchTab(btn.dataset.tab)));
+  document.getElementById("listSearch").addEventListener("input", e => {
+    state.listQuery = e.target.value.trim();
+    renderList();
+  });
+  document.getElementById("detailBack").addEventListener("click", () => switchTab("list"));
+}
+
+// ---------- 视图：计算器 / 列表 / 详情 ----------
+
+function escapeHtml(s) {
+  return String(s ?? "").replace(/[&<>"']/g, c =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+function switchTab(tab) {
+  state.tab = tab;
+  document.getElementById("viewCalc").hidden = tab !== "calc";
+  document.getElementById("viewList").hidden = tab !== "list";
+  document.getElementById("viewDetail").hidden = tab !== "detail";
+  document.querySelectorAll(".tab").forEach(btn =>
+    btn.classList.toggle("on", btn.dataset.tab === tab));
+  if (tab === "list" && state.listAll.length === 0) loadList();
+}
+
+async function loadList() {
+  const d = await api("/api/species/all");
+  state.listAll = d.results;
+  renderList();
+}
+
+function matchSpecies(e, q) {
+  if (!q) return true;
+  return [e.zh, e.en, ...(e.typesZh || []), ...(e.abilities || []).map(a => a.zh || a.en)]
+    .filter(Boolean).some(s => s.toLowerCase().includes(q));
+}
+
+function renderList() {
+  const q = state.listQuery.toLowerCase();
+  const grid = document.getElementById("pokeGrid");
+  const items = state.listAll.filter(e => matchSpecies(e, q));
+  if (items.length === 0) {
+    grid.innerHTML = `<div class="empty">没有匹配的宝可梦</div>`;
+    return;
+  }
+  grid.innerHTML = items.map(e => `
+    <button class="poke-card" data-key="${escapeHtml(e.key)}">
+      <div class="name">${escapeHtml(e.zh || e.en)}</div>
+      <div class="en">${escapeHtml(e.en)}</div>
+      <div class="row">
+        <span class="types">${(e.typesZh || e.types || []).map(t => `<span class="type-tag">${escapeHtml(t)}</span>`).join("")}</span>
+      </div>
+    </button>`).join("");
+  grid.querySelectorAll(".poke-card").forEach(card =>
+    card.addEventListener("click", () => openDetail(card.dataset.key)));
+}
+
+async function openDetail(key) {
+  const d = await api("/api/species/" + encodeURIComponent(key));
+  state.detail = d;
+  switchTab("detail");
+  renderDetail(d);
+}
+
+function renderDetail(d) {
+  const body = document.getElementById("detailBody");
+  const stats = STAT_KEYS.map(k => `
+    <div class="stat-cell"><div class="k">${STAT_LABEL[k]}</div><div class="v">${d.baseStats[k] ?? "—"}</div></div>`).join("");
+  const abilities = (d.abilities || []).map(a => `<span class="tag">${escapeHtml(a.zh || a.en)}</span>`).join("") || `<span class="note">—</span>`;
+  const moves = (d.learnset || []).map(m => `
+    <tr>
+      <td>${escapeHtml(m.zh || m.en)}</td>
+      <td><span class="type-tag">${escapeHtml(m.typeZh || m.type)}</span></td>
+      <td>${escapeHtml(m.categoryZh || m.category)}</td>
+      <td class="num">${m.power ?? "—"}</td>
+      <td class="num">${m.priority ?? 0}</td>
+    </tr>`).join("");
+  body.innerHTML = `
+    <div class="detail-head">
+      <div class="title">
+        <h2>${escapeHtml(d.zh || d.en)}</h2>
+        <span class="en">${escapeHtml(d.en)}</span>
+        <span class="types">${(d.typesZh || d.types || []).map(t => `<span class="type-tag">${escapeHtml(t)}</span>`).join("")}</span>
+      </div>
+      <div class="detail-section-title">特性</div>
+      <div class="tags">${abilities}</div>
+      <div class="detail-section-title">种族值</div>
+      <div class="stat-row">${stats}</div>
+    </div>
+    <div class="detail-section-title">可学招式（${(d.learnset || []).length}）</div>
+    <table class="moves-table">
+      <thead><tr><th>招式</th><th>属性</th><th>分类</th><th class="num">威力</th><th class="num">优先度</th></tr></thead>
+      <tbody>${moves || `<tr><td colspan="5" class="empty">暂无招式数据</td></tr>`}</tbody>
+    </table>`;
+}
+
+function fillSelect(id, values) {
+  const sel = document.getElementById(id);
+  sel.innerHTML = values.map(v =>
+    `<option value="${v.value}">${v.zh}</option>`).join("");
+}
+
+function renderSide(cardId, side, role) {
+  const card = document.getElementById(cardId);
+  const isAtk = role === "atk";
+  const head = isAtk ? "攻击方" : "防御方";
+  const natureOpts = state.meta.natures.map(n => `<option ${n === side.nature ? "selected" : ""}>${n}</option>`).join("");
+  const abilityOpts = side.abilityOptions.map(a => `<option value="${a.en}">${a.zh || a.en}</option>`).join("");
+  const itemOpts = state.itemOptions.map(i => `<option value="${i.english}">${i.zh || i.english}</option>`).join("");
+  const stagePairs = isAtk
+    ? [["atk", "攻击等级"], ["spa", "特攻等级"]]
+    : [["def", "防御等级"], ["spd", "特防等级"]];
+
+  card.innerHTML = `
+    <div class="card-head"><span>${head}</span><span class="note">${side.entry ? side.entry.zh || side.entry.en : "未选择"}</span></div>
+    <div class="card-body">
+      <div class="field-row">
+        <label>宝可梦</label>
+        <div class="search-box" data-search="species">
+          <input type="text" placeholder="搜索中文名 / 英文名" value="${side.species}" autocomplete="off">
+          <div class="dropdown"></div>
+        </div>
+      </div>
+
+      ${isAtk ? `
+      <div class="field-row">
+        <label>招式（仅可学）</label>
+        <div class="search-box" data-search="move">
+          <input type="text" placeholder="${side.entry ? "选择招式" : "先选择宝可梦"}" autocomplete="off" ${side.entry ? "" : "disabled"}>
+          <div class="dropdown"></div>
+        </div>
+      </div>` : ""}
+
+      <div class="two-col">
+        <div class="field-row">
+          <label>性格</label>
+          <select data-bind="nature">${natureOpts}</select>
+        </div>
+        <div class="field-row">
+          <label>特性</label>
+          <select data-bind="ability"><option value="">无</option>${abilityOpts}</select>
+        </div>
+      </div>
+
+      <div class="field-row">
+        <label>持有道具</label>
+        <select data-bind="item"><option value="">无</option>${itemOpts}</select>
+      </div>
+
+      <div class="field-row">
+        <label>性别</label>
+        <select data-bind="gender">
+          <option value="N" ${side.gender === "N" ? "selected" : ""}>未知</option>
+          <option value="M" ${side.gender === "M" ? "selected" : ""}>雄</option>
+          <option value="F" ${side.gender === "F" ? "selected" : ""}>雌</option>
+        </select>
+      </div>
+
+      ${side.ability && TRIGGER_ABILITY_ON[side.ability] ? `
+      <div class="field-row">
+        <label>${TRIGGER_ABILITY_ON[side.ability]}判定</label>
+        <div class="seg" data-bind="abilityOn">
+          <button type="button" data-v="null" class="${side.abilityOn === null ? "on" : ""}">自动</button>
+          <button type="button" data-v="on" class="${side.abilityOn === true ? "on" : ""}">发动×1.3</button>
+          <button type="button" data-v="off" class="${side.abilityOn === false ? "on" : ""}">未发动</button>
+        </div>
+      </div>` : ""}
+
+      <div class="field-row">
+        <label>能力等级（-6 ~ +6）</label>
+        <div class="points-grid">
+          ${stagePairs.map(([k, label]) => `
+            <div class="point-cell">
+              <span class="k">${label}</span>
+              <input type="number" min="-6" max="6" data-stage="${k}" value="${side.stage[k]}">
+            </div>`).join("")}
+        </div>
+      </div>
+
+      <div class="field-row">
+        <label>能力点数（单项 0–32，合计 ≤66）</label>
+        <div class="points-grid">
+          ${STAT_KEYS.map(k => `
+            <div class="point-cell">
+              <span class="k">${STAT_LABEL[k]}</span>
+              <input type="number" min="0" max="32" data-point="${k}" value="${side.points[k]}">
+            </div>`).join("")}
+        </div>
+      </div>
+
+      ${side.entry ? statsBlock(side.entry) : ""}
+
+      <div class="chips">
+        ${isAtk ? `
+          <label><input type="checkbox" data-bind="helpingHand" ${side.helpingHand ? "checked" : ""}> 帮助</label>
+          <label><input type="checkbox" data-bind="status" ${side.status === "burn" ? "checked" : ""}> 烧伤</label>
+        ` : `
+          <label><input type="checkbox" data-bind="reflect" ${side.reflect ? "checked" : ""}> 反射壁</label>
+          <label><input type="checkbox" data-bind="lightScreen" ${side.lightScreen ? "checked" : ""}> 光墙</label>
+          <label><input type="checkbox" data-bind="friendGuard" ${side.friendGuard ? "checked" : ""}> 友谊防守</label>
+        `}
+      </div>
+    </div>`;
+
+  bindSide(card, side, role);
+}
+
+function statsBlock(entry) {
+  const bs = entry.baseStats;
+  return `
+    <div class="field-row">
+      <label>种族值</label>
+      <div class="stat-grid">
+        ${STAT_KEYS.map(k => `<div class="stat-cell"><div class="k">${STAT_LABEL[k]}</div><div class="v">${bs[k]}</div></div>`).join("")}
+      </div>
+      <div class="types" style="margin-top:6px">${(entry.typesZh || entry.types).map(t => `<span class="type-tag">${t}</span>`).join("")}</div>
+    </div>`;
+}
+
+function bindSide(card, side, role) {
+  card.querySelector('[data-bind="nature"]').addEventListener("change", e => { side.nature = e.target.value; scheduleCalc(); });
+  const abilitySel = card.querySelector('[data-bind="ability"]');
+  if (abilitySel) abilitySel.addEventListener("change", e => {
+    side.ability = e.target.value || null;
+    if (!TRIGGER_ABILITY_ON[side.ability]) side.abilityOn = null;
+    renderSide(card.id, side, role);
+    scheduleCalc();
+  });
+  const genderSel = card.querySelector('[data-bind="gender"]');
+  if (genderSel) genderSel.addEventListener("change", e => { side.gender = e.target.value; scheduleCalc(); });
+  const seg = card.querySelector('[data-bind="abilityOn"]');
+  if (seg) seg.querySelectorAll("button").forEach(btn => btn.addEventListener("click", () => {
+    const v = btn.dataset.v;
+    side.abilityOn = v === "null" ? null : v === "on";
+    seg.querySelectorAll("button").forEach(b => b.classList.toggle("on", b === btn));
+    scheduleCalc();
+  }));
+  const itemSel = card.querySelector('[data-bind="item"]');
+  if (itemSel) itemSel.addEventListener("change", e => { side.item = e.target.value || null; scheduleCalc(); });
+
+  card.querySelectorAll("[data-point]").forEach(inp => {
+    const update = () => {
+      side.points[inp.dataset.point] = Math.max(0, Math.min(32, Number(inp.value) || 0));
+      scheduleCalc();
+    };
+    inp.addEventListener("input", update);
+    inp.addEventListener("change", update);
+  });
+
+  card.querySelectorAll("[data-stage]").forEach(inp => {
+    const update = () => {
+      side.stage[inp.dataset.stage] = Math.max(-6, Math.min(6, Number(inp.value) || 0));
+      scheduleCalc();
+    };
+    inp.addEventListener("input", update);
+    inp.addEventListener("change", update);
+  });
+
+  card.querySelectorAll("[data-bind]").forEach(el => {
+    if (["nature", "ability", "item", "gender", "abilityOn"].includes(el.dataset.bind)) return;
+    el.addEventListener("change", () => {
+      const key = el.dataset.bind;
+      if (key === "status") side.status = el.checked ? "burn" : null;
+      else side[key] = el.checked;
+      scheduleCalc();
+    });
+  });
+
+  bindSearch(card, "[data-search='species']", async q => {
+    const d = await api("/api/species?q=" + encodeURIComponent(q));
+    return d.results.map(x => ({ id: x.key, label: x.zh || x.en, sub: (x.typesZh || x.types).join("/"), raw: x }));
+  }, async item => {
+    const detail = await api("/api/species/" + item.id);
+    side.entry = detail; side.species = detail.zh || detail.en;
+    side.abilityOptions = detail.abilities; side.moves = detail.learnset; side.move = null;
+    renderSide(card.id, side, role);
+    scheduleCalc();
+  });
+
+  if (role === "atk") {
+    bindSearch(card, "[data-search='move']", async (q) => {
+      const s = (q || "").toLowerCase();
+      const list = !s ? side.moves : side.moves.filter(m =>
+        (m.zh || "").toLowerCase().includes(s) || m.en.toLowerCase().includes(s));
+      return list.map(m => ({ id: m.en, label: m.zh || m.en, sub: `${m.typeZh || m.type}/${m.categoryZh || m.category}/${m.power ?? "-"}`, raw: m }));
+    }, item => { side.move = item.raw; scheduleCalc(); });
+  }
+}
+
+function bindSearch(card, selector, fetchFn, onPick) {
+  const box = card.querySelector(selector);
+  if (!box) return;
+  const input = box.querySelector("input");
+  const drop = box.querySelector(".dropdown");
+  let timer;
+  input.addEventListener("input", () => {
+    clearTimeout(timer);
+    timer = setTimeout(async () => {
+      if (!input.value && selector.includes("species")) { drop.innerHTML = ""; return; }
+      try {
+        const items = await fetchFn(input.value);
+        drop.innerHTML = items.length
+          ? items.map((it, i) => `<button data-i="${i}"><div>${it.label}</div><div class="meta">${it.sub}</div></button>`).join("")
+          : `<button disabled class="meta">无匹配</button>`;
+        drop.querySelectorAll("button[data-i]").forEach(btn =>
+          btn.addEventListener("click", () => {
+            onPick(items[Number(btn.dataset.i)]);
+            drop.innerHTML = ""; input.value = items[Number(btn.dataset.i)].label;
+          }));
+      } catch (e) { drop.innerHTML = `<button disabled class="meta">${e.message}</button>`; }
+    }, 180);
+  });
+  document.addEventListener("click", e => { if (!box.contains(e.target)) drop.innerHTML = ""; });
+}
+
+function swapSides() {
+  [state.attacker, state.defender] = [state.defender, state.attacker];
+  renderSide("atkCard", state.attacker, "atk");
+  renderSide("defCard", state.defender, "def");
+  scheduleCalc();
+}
+
+let calcTimer;
+function scheduleCalc() { clearTimeout(calcTimer); calcTimer = setTimeout(calculate, 150); }
+
+function sidePayload(side) {
+  return {
+    species: side.entry ? side.entry.showdownId : side.species,
+    nature: side.nature,
+    stat_points: side.points,
+    stat_stage: { hp: 0, atk: side.stage.atk, def: side.stage.def, spa: side.stage.spa, spd: side.stage.spd, spe: 0 },
+    ability: side.ability,
+    item: side.item,
+    status: side.status,
+    gender: side.gender,
+    ability_on: side.abilityOn,
+  };
+}
+
+async function calculate() {
+  const box = document.getElementById("resultBox");
+  if (!state.attacker.entry || !state.defender.entry || !state.attacker.move) {
+    box.innerHTML = `<div class="empty">选择双方宝可梦与攻击方招式后自动计算</div>`;
+    return;
+  }
+  const payload = {
+    attacker: sidePayload(state.attacker),
+    defender: sidePayload(state.defender),
+    move: { name: state.attacker.move.en },
+    field: {
+      doubles: document.getElementById("doubles").checked,
+      spread: document.getElementById("spread").checked,
+      weather: document.getElementById("weather").value,
+      terrain: document.getElementById("terrain").value,
+      reflect: state.defender.reflect,
+      light_screen: state.defender.lightScreen,
+      friend_guard: state.defender.friendGuard,
+      helping_hand: state.attacker.helpingHand,
+    },
+    crit: document.getElementById("crit").checked,
+  };
+  try {
+    const d = await api("/api/calculate", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    renderResult(d);
+  } catch (e) {
+    box.innerHTML = `<div class="empty">${e.message}</div>`;
+  }
+}
+
+function renderResult(d) {
+  const r = d.result;
+  const tags = [];
+  if (r.effectiveTypeZh && r.effectiveTypeZh !== d.move.typeZh) {
+    tags.push(`<span class="tag eff">属性→${r.effectiveTypeZh}</span>`);
+  }
+  if (r.stab > 1) tags.push(`<span class="tag stab">本系一致 ×${r.stab}</span>`);
+  if (r.effectiveness !== 1) {
+    const eff = r.effectiveness === 0 ? "免疫" : `相性 ×${r.effectiveness}`;
+    tags.push(`<span class="tag eff">${eff}</span>`);
+  }
+  const ko = r.ko;
+  const koText = ko.ohko_rolls > 0 ? `OHKO ${ko.ohko_rolls}/16（${ko.ohko_pct}%）` : "无法一击击倒";
+  document.getElementById("resultBox").innerHTML = `
+    <h2>${d.attacker.entry.zh || d.attacker.entry.en} → ${d.defender.entry.zh || d.defender.entry.en}
+      <span class="note">${d.move.zh || d.move.en}（${d.move.typeZh || d.move.type}/${d.move.categoryZh || d.move.category}/${d.move.power}）</span></h2>
+    <div class="damage-big"><span class="range">${r.min} ~ ${r.max}</span></div>
+    <div class="result-grid">
+      <div class="cell"><div class="k">占 HP</div><div class="v">${r.pct_min}% ~ ${r.pct_max}%</div></div>
+      <div class="cell"><div class="k">${koText}</div><div class="v">${r.hp} HP</div></div>
+      <div class="cell"><div class="k">攻击方能力</div><div class="v">${d.attacker.battleAtk ?? (d.move.category === "Physical" ? d.attacker.stats.atk : d.attacker.stats.spa)}</div></div>
+      <div class="cell"><div class="k">速度 攻/守</div><div class="v">${d.attacker.battleSpe ?? d.attacker.stats.spe} / ${d.defender.battleSpe ?? d.defender.stats.spe}</div></div>
+    </div>
+    <div class="tags">${tags.join("")}</div>
+    ${r.breakdown.length ? `<div class="breakdown">修正：${r.breakdown.join("、")}</div>` : `<div class="breakdown">无额外修正</div>`}
+    <div class="breakdown">16 档：${r.rolls.join(", ")}</div>`;
+}
+
+init();
+</script>
+</body>
+</html>

@@ -1,0 +1,245 @@
+# Pokémon Champions Assistant（非官方）
+
+<p align="center">
+  面向 Android 的本地截图识别与实战伤害计算助手
+</p>
+
+<p align="center">
+  <a href="https://github.com/crazylei12/Pokemon-Champions-dmg_cal/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/crazylei12/Pokemon-Champions-dmg_cal?display_name=tag&sort=semver"></a>
+  <img alt="Android 13+" src="https://img.shields.io/badge/Android-13%2B-3DDC84?logo=android&logoColor=white">
+  <img alt="arm64-v8a" src="https://img.shields.io/badge/ABI-arm64--v8a-4C8BF5">
+  <a href="https://github.com/crazylei12/Pokemon-Champions-dmg_cal/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/crazylei12/Pokemon-Champions-dmg_cal/actions/workflows/ci.yml/badge.svg"></a>
+  <a href="LICENSE"><img alt="MIT License" src="https://img.shields.io/badge/license-MIT-yellow.svg"></a>
+</p>
+
+Pokémon Champions Assistant 是一款原生 Android 对战辅助应用。它可以导入用户主动输入的游戏内公开队伍码，也可以通过用户主动授权的屏幕截图在本机识别队伍信息、保存我方完整配置与自定义对手配置，并以悬浮面板或可选战斗 HUD 提供双方伤害范围、击倒次数和速度线等结果。
+
+截图识别、队伍存储和伤害计算均在设备本地完成。只有用户点击解析公开队伍码时，App 才会用内置匿名游客身份建立一次性会话，直接向 Pokémon Champions 官方 HTTPS 服务查询该十位公开码。游戏无需启动，也不需要电脑端服务、代理或抓包证书。项目不会修改、注入或 Hook 游戏进程，不读取游戏内存，不拦截游戏网络，也不会自动操作游戏。
+
+> 本项目与 Nintendo、Creatures、GAME FREAK、The Pokémon Company 或 Pokémon Champions 官方无关。自动识别结果必须由用户确认，计算中的对方配置属于战术假设，不应视为对手真实配置或官方赛事裁定。
+
+## 维护范围
+
+自 **2026-09-10** 起，项目只维护 **Android 标准版（`main`）**。鸿蒙版和录屏/回放版均停止维护，后续不再同步功能、修复、数据、测试或发布；旧分支与历史 Release 保留为存档。开发约定见 [AGENTS.md](AGENTS.md)。
+
+## 1.1.13 更新
+
+恢复公开队伍码查询，并在服务器返回 `9901` 时自动核验和重试当前游戏版本。MuMu Android 15 已验证取令牌、登录、查询和六成员解码完整链路。特别感谢 [Pedro Soares（silph-scope.com）](https://silph-scope.com/) 提供相关问题的解决方法与协议参数线索。详见 [1.1.13 发布说明](docs/release_1.1.13_zh.md)。
+
+## 核心功能
+
+### 1. 导入游戏内公开队伍码
+
+**公开队伍码查询已适配游戏 1.2.2。** 无需启动游戏或 Google Play 完整性服务；手机只需能够连接 Pokémon Champions 官方服务。查询失败时仍可使用截图识别或手动配置。
+
+在首页点击“导入队伍码”，输入 Pokémon Champions 的十位公开码并解析。核对六只宝可梦的性格、能力点、特性、道具和招式后，可为这份配置命名并选择：
+
+- 保存为一支完整的“我的队伍”；
+- 把六只宝可梦一次性保存到“我保存的宝可梦配置”，六只使用同一个配置名称。
+
+官方服务不可用与公开码不存在会分别提示；保存六个对手配置采用一次性写入，不会留下半支导入结果。查询令牌、Cookie 和会话只在单次请求的内存中使用，不会写入队伍记录或备份。
+
+<p align="center"><img src="docs/assets/readme/team-code-import.jpg" alt="手机实机：输入公开队伍码后解析并预览宝可梦配置" width="420"></p>
+
+图中展示公开码解析后的训练家与成员信息，包括性格、特性、道具、招式、实际能力和加点；向下浏览并核对完整队伍后再命名保存。截图来自用户提供的手机相册原图。
+
+### 2. 识别并保存我方队伍配置
+
+依次全屏打开同一支队伍的“招式 / 道具”页和“能力值”页，通过悬浮按钮各识别一次。应用会把两页结果合并为可复用的本地队伍：
+
+- 6 只宝可梦与形态；
+- 特性、道具和招式；
+- 等级、实际能力值及能力修正信息；
+- 识别后的逐项人工确认与修正；空白能力值会显示明确字段名，所有 6 只宝可梦确认完整后才可命名保存；
+- 已保存队伍的命名、保存与切换。
+
+保存后无需在每局对战中重复录入我方配置，伤害计算会直接读取用户确认过的完整队伍。
+
+![识别并保存我方队伍配置](docs/assets/readme/own-team-config.jpg)
+
+### 3. 识别并确认本局双方队伍
+
+在双方队伍预览画面点击“识别当前屏幕上的双方队伍”，应用会一次读取双方各 6 个槽位：
+
+- 我方识别结果用于匹配已有保存队伍；
+- 对方每个槽位给出候选和置信度；
+- 支持展开 Top-3 候选或按名称搜索修正；
+- 每次成功重新识别双方队伍都会开始一场新对局，并清空上一局的状态、场地、能力等级和现场覆盖；
+- 只有用户确认后，结果才会进入本局伤害面板。
+
+![识别并确认本局双方队伍](docs/assets/readme/team-preview-recognition.jpg)
+
+### 4. 悬浮实战伤害面板
+
+确认本局双方队伍后，可直接在游戏或相册演示画面上打开悬浮伤害面板。面板支持：
+
+- “我方输出”和“我方承伤”双向计算；
+- 双方宝可梦、形态、招式、特性、道具与常用配置切换；
+- 可把当前对手的能力点、性格、特性和道具命名保存为长期配置；
+- 天气、场地、状态和对手条件调整；
+- 伤害百分比、HP 区间、击倒次数与速度线展示；
+- 手动锁定选择，避免后续识别静默覆盖正在查看的结果。
+
+<p align="center">
+  <img src="docs/assets/readme/battle-damage-panel.jpg" width="520" alt="悬浮实战伤害面板">
+</p>
+
+### 5. 可选战斗 HUD
+
+启动对局助手时可选择 HUD 模式。确认双方阵容后，常用信息会直接叠加在对战画面上，不再保留悬浮球：
+
+- HUD 顶部可直接切换“单打”或“双打”；单打只显示左下方我方与右上方对方各一只，双打恢复双方各两只；
+- 确认双方阵容后先显示对方六只宝可梦的属性抗性与弱点；固定大小的属性图标按每行实际数量自动分列；
+- 当前场上宝可梦按速度或速度范围排序，戏法空间开启时自动反转顺序；
+- 同时显示我方四个招式对当前目标的伤害区间，并可直接切换双方场上宝可梦与对方耐久预设；
+- 切换到单打会关闭范围招式伤害修正，切回双打会默认开启；双方 6 只队伍识别与队伍预览流程保持不变；
+- 顶部按钮按“切换计算 → 隐藏 HUD → 显示 HUD”循环；再次显示时回到属性相性页；
+- “调整”可拖动、缩放并分别保存横竖屏布局；纯展示层触摸穿透，可操作按钮始终位于其上方；
+- “再战”重新识别新一局双方阵容，“识别我方”用于录入或更新自己的保存队伍；标准版 HUD 不再显示录像按钮，顶部五个按钮连续排列。升级时旧版顶部按钮布局会重排，其他区域的自定义布局保留；之后仍可通过“调整”保存新的顶部布局。
+
+<p align="center">
+  <img src="docs/assets/readme/type-matchup-hud-v1.1.8.jpg" width="960" alt="1.1.8 属性相性 HUD 实机画面">
+</p>
+
+<p align="center"><em>1.1.8 属性相性页；图片来自发布当天物理手机相册的第一张图，双方游戏昵称已遮挡。</em></p>
+
+<p align="center">
+  <img src="docs/assets/readme/battle-hud.jpg" width="960" alt="战斗 HUD 实机画面">
+</p>
+
+### 6. 保存与分享对手宝可梦配置
+
+- 首页“我保存的宝可梦配置”可按宝可梦或配置名称搜索，并支持不进入对局直接新建、编辑和删除；
+- 整包数据导出会包含用户配置，也可单独导出只含宝可梦配置的分享文件；导入会保留本机其他配置并合并同一配置 ID；
+- 基础形态与对应 Mega 形态、以及坚盾剑怪、飘浮泡泡、谜拟Ｑ、莫鲁贝可和海豚侠等可在单场对战内切换的形态共享配置；
+- 形态切换后会按目标形态种族值重算能力值，并在原特性不可用时回退到目标形态的默认特性；其他地区、家电、大小、花纹或性别形态仍相互隔离。
+
+以上均为 Android 手机或平板上的实际运行画面。队伍预览图来自本地相册，仅用于展示用户主动授权、识别和确认的完整流程；画面中的游戏名称、角色与素材权利归各自权利人所有，不属于本项目 MIT License 的授权范围。
+
+## 使用流程
+
+1. 如果已有公开队伍码，可在首页解析、核对并命名保存；没有队伍码时仍可使用截图识别流程。
+2. 在“对局”页授予悬浮窗权限，并按需要启动普通模式或 HUD 模式的屏幕截图会话。
+3. 首次使用或更换队伍时，识别两张我方队伍配置页，在修正页逐项确认完整结果后命名保存。
+4. 进入双方队伍预览画面，普通模式点击悬浮按钮、HUD 模式点击“再战”，识别双方 6 只宝可梦并人工确认。
+5. 普通模式下打开“实战伤害”查看完整面板；HUD 模式会在确认阵容后先显示属性相性，点击“切换计算”再查看速度、伤害和快捷控制。
+
+截图会话是 Android 的前台 MediaProjection 会话。应用被强制退出、重新安装或会话被系统终止后，必须由用户再次授权；应用不会在后台静默恢复截图权限。
+
+## 安装
+
+### 下载正式版
+
+1. 打开 [Latest Release](https://github.com/crazylei12/Pokemon-Champions-dmg_cal/releases/latest)。
+2. 下载 `Pokemon-Champions-Assistant-v1.1.13-arm64.apk`；本次只发布 Android 标准版。
+3. 在 Android 13 或更高版本的 64 位 ARM 手机、平板上安装。
+
+当前版本为 **1.1.13 (18)**，仅提供 `arm64-v8a` 标准版。沿用原有包名和生产签名，可覆盖旧标准版；旧录屏版用户安装后会切换为标准版，录屏功能不包含在本包中。录屏版和 HarmonyOS 已停止维护，旧版仍可在历史 Release 查看。升级前可在设置中导出 JSON 备份。APK 下载和安装由系统浏览器与 Android 安装器确认。
+
+### 截图识别注意事项
+
+- 选择“单个应用”共享时，请选中当前要识别的 Pokémon Champions 或相册；切换到另一个应用后需要重新授权。
+- 识别前应让目标画面稳定并保持全屏，隐藏相册工具栏和会压缩画面的系统控件。
+- ColorOS 若提示“应用内容已屏蔽”或“相册内容对方不可见”，请先在通知面板点击“解除屏蔽”。
+- 游戏界面布局发生变化、画面处于切换动画或识别置信度较低时，请使用候选列表或搜索手动修正。
+
+完整说明见 [Android 双方队伍 ROI 识别功能说明](docs/android_team_preview_roi_usage_zh.md)。
+
+## 隐私与安全边界
+
+| 项目 | 行为 |
+| --- | --- |
+| 屏幕内容 | 仅在用户启动 MediaProjection 并点击悬浮按钮后读取当前帧 |
+| 识别与计算 | 截图识别与伤害计算完全在 Android 本机离线完成 |
+| 队伍与对局 | 保存在应用私有目录，不写入公共下载目录 |
+| 备份与迁移 | 支持 Android 加密备份/设备迁移，以及设置页主动导出和恢复不含截图的 JSON 整包 |
+| 网络访问 | 手动检查更新时访问 GitHub；用户主动解析队伍码时，App 直接连接 Pokémon Champions 官方 HTTPS 服务并查询该公开码，不上传截图、本地队伍库或计算数据；系统备份开启时，Android 可加密同步所选 JSON 数据 |
+| 游戏交互 | 不注入、不 Hook、不读内存、不拦截网络、不自动点击或代打 |
+| 自动识别 | 只提供候选；关键结果由用户确认或修正 |
+
+## 从源码构建
+
+需要 Git、Node.js 22+、npm、JDK 17 和 Android SDK 36。在 Windows PowerShell 中：
+
+```powershell
+git clone --recurse-submodules https://github.com/crazylei12/Pokemon-Champions-dmg_cal.git
+cd Pokemon-Champions-dmg_cal
+npm.cmd ci
+npm.cmd ci --prefix external/smogon-damage-calc
+npm.cmd ci --prefix external/smogon-damage-calc/calc
+npm.cmd test
+
+npm.cmd run android:setup
+npm.cmd run android:doctor
+npm.cmd run android:assemble
+```
+
+Debug APK 分别输出到：
+
+```text
+android-app/app/build/outputs/apk/debug/app-arm64-v8a-debug.apk
+android-app/app/build/outputs/apk/debug/app-x86_64-debug.apk
+```
+
+Release 构建还需要仓库外保存的固定签名密钥。版本、签名、ABI、许可证资产和更新权限的完整发布约定见 [Android 版本与发布指南](docs/android_update_release_guide_zh.md)。
+
+公开队伍码直连协议、匿名游客身份、数字映射和设备验收边界见 [公开队伍码 App 直连说明](docs/team_code_resolver_contract_zh.md)。
+
+只构建正式手机版 APK：
+
+```powershell
+npm.cmd run android:assemble-release-arm64
+```
+
+### 识别素材边界
+
+公开源码不跟踪个人截图、保存队伍、标注数据集、下载的第三方图片或原始模板。Android 队伍预览识别所需的 `team-preview-templates-v2.bin` 及校验元数据属于核心运行资源，随源码维护并强制打入 APK；干净克隆可以直接构建完整功能。
+
+```powershell
+python -m pip install -r requirements-recognition.txt
+npm.cmd run recognition:android:templates
+```
+
+缺少该特征包、元数据与 ROI 哈希不一致，或 APK 未包含特征包时，正式构建与 APK 校验都会直接失败。请勿向 Issue 或 Pull Request 提交个人截图、原始游戏图片、识别缓存或无再分发授权的数据集。
+
+## 项目结构
+
+```text
+android-app/                    Android 应用、悬浮服务、截图、存储与界面
+src/damage/                     伤害请求、结果契约与 Smogon 适配层
+src/recognition/                ROI、OCR 与识别数据契约
+src/data/                       本地化、伤害预设、ROI 配置与来源元数据
+tools/android/                  Android 资源构建、环境检查与回归测试
+tools/recognition/              本地识别评估与模板生成工具
+external/smogon-damage-calc/    固定提交的上游 Git 子模块
+```
+
+伤害引擎基于固定版本的 Smogon damage-calc，并通过生成脚本转换为 Android 本地资源。`npm.cmd test` 会执行 TypeScript 检查、Android 伤害引擎与悬浮面板回归测试，以及第三方许可证一致性检查；GitHub Actions 会在提交和 Pull Request 上运行同一质量门槛。
+
+## 文档
+
+- [更新日志](CHANGELOG.md)
+- [1.1.13 发布说明（Android 标准版）](docs/release_1.1.13_zh.md)
+- [1.1.8 历史发布说明（Android / HarmonyOS）](docs/release_1.1.8_zh.md)
+- [产品需求与功能边界](docs/pokemon_champions_damage_assistant_prd_zh.md)
+- [Android 双方队伍 ROI 识别功能说明](docs/android_team_preview_roi_usage_zh.md)
+- [游戏版本、资源与赛季更新流程](docs/pokemon_icon_season_update_zh.md)
+- [伤害计算设计](docs/damage_calculation_design_zh.md)
+- [对局状态与用户调整](docs/battle_state_and_user_adjustment_zh.md)
+- [Android 版本、更新与发布指南](docs/android_update_release_guide_zh.md)
+- [公开发布检查清单](PUBLIC_RELEASE_CHECKLIST.md)
+
+## 贡献
+
+欢迎通过 Issue 报告可复现问题，或通过 Pull Request 改进代码、测试和文档。提交前请：
+
+1. 运行 `npm.cmd test`；
+2. 保持 Smogon 子模块固定在经过审阅的提交；
+3. 不提交 APK、签名文件、设备信息、个人队伍、未经审阅的截图或第三方素材；
+4. 对新增依赖、数据和生成资源补充来源与许可证说明。
+
+## 许可证与声明
+
+本项目有权许可的原创代码采用 [MIT License](LICENSE)，版权所有者为 `crazylei12`。第三方软件、数据、商标和素材继续受各自许可证与权利约束；完整归属信息见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) 和 `third_party/licenses/`。
+
+Pokémon、Pokémon Champions 及相关名称、角色、图像和商标属于各自权利人。本项目是独立的非官方工具，不获得也不暗示任何官方认可。README 中的实机截图仅用于说明兼容性和功能，不授予对其中第三方素材的复制、再分发或商业使用权。

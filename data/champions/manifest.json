@@ -1,0 +1,122 @@
+{
+  "defaultSeason": "Current",
+  "base": {
+    "showdownSnapshot": null,
+    "championsIndexDataVersion": "20261112183752860",
+    "championsIndexGeneratedAt": "2026-11-12T18:37:52.860Z"
+  },
+  "seasons": [
+    {
+      "id": "Current",
+      "label": "Current",
+      "regulation": null,
+      "live": true,
+      "inheritsFrom": "M7",
+      "sourceDataVersion": "20261112183752860",
+      "fetchedAt": null,
+      "roster": "species/Current.json",
+      "moves": "moves-overrides/Current.json",
+      "items": "items/Current.json",
+      "abilities": "abilities/Current.json",
+      "usageDir": "usage/Current/"
+    },
+    {
+      "id": "M7",
+      "label": "M7",
+      "regulation": null,
+      "live": false,
+      "inheritsFrom": "M6",
+      "sourceDataVersion": "20261112183752860",
+      "fetchedAt": null,
+      "roster": "species/M7.json",
+      "moves": "moves-overrides/M7.json",
+      "items": "items/M7.json",
+      "abilities": "abilities/M7.json",
+      "usageDir": "usage/M7/"
+    },
+    {
+      "id": "M6",
+      "label": "M6",
+      "regulation": null,
+      "live": false,
+      "inheritsFrom": "M5",
+      "sourceDataVersion": "20261112183752860",
+      "fetchedAt": null,
+      "roster": "species/M6.json",
+      "moves": "moves-overrides/M6.json",
+      "items": "items/M6.json",
+      "abilities": "abilities/M6.json",
+      "usageDir": "usage/M6/"
+    },
+    {
+      "id": "M5",
+      "label": "M5",
+      "regulation": null,
+      "live": false,
+      "inheritsFrom": "M4",
+      "sourceDataVersion": "20261112183752860",
+      "fetchedAt": null,
+      "roster": "species/M5.json",
+      "moves": "moves-overrides/M5.json",
+      "items": "items/M5.json",
+      "abilities": "abilities/M5.json",
+      "usageDir": "usage/M5/"
+    },
+    {
+      "id": "M4",
+      "label": "M4",
+      "regulation": null,
+      "live": false,
+      "inheritsFrom": "M3",
+      "sourceDataVersion": "20261112183752860",
+      "fetchedAt": null,
+      "roster": "species/M4.json",
+      "moves": "moves-overrides/M4.json",
+      "items": "items/M4.json",
+      "abilities": "abilities/M4.json",
+      "usageDir": "usage/M4/"
+    },
+    {
+      "id": "M3",
+      "label": "M3",
+      "regulation": null,
+      "live": false,
+      "inheritsFrom": "M2",
+      "sourceDataVersion": "20261112183752860",
+      "fetchedAt": null,
+      "roster": "species/M3.json",
+      "moves": "moves-overrides/M3.json",
+      "items": "items/M3.json",
+      "abilities": "abilities/M3.json",
+      "usageDir": "usage/M3/"
+    },
+    {
+      "id": "M2",
+      "label": "M2",
+      "regulation": null,
+      "live": false,
+      "inheritsFrom": "M1",
+      "sourceDataVersion": "20261112183752860",
+      "fetchedAt": null,
+      "roster": "species/M2.json",
+      "moves": "moves-overrides/M2.json",
+      "items": "items/M2.json",
+      "abilities": "abilities/M2.json",
+      "usageDir": "usage/M2/"
+    },
+    {
+      "id": "M1",
+      "label": "M1",
+      "regulation": null,
+      "live": false,
+      "inheritsFrom": null,
+      "sourceDataVersion": "20261112183752860",
+      "fetchedAt": null,
+      "roster": "species/M1.json",
+      "moves": "moves-overrides/M1.json",
+      "items": "items/M1.json",
+      "abilities": "abilities/M1.json",
+      "usageDir": "usage/M1/"
+    }
+  ]
+}

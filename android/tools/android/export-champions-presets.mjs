@@ -1,0 +1,290 @@
+import {mkdir, readFile, writeFile} from 'node:fs/promises';
+import path from 'node:path';
+import vm from 'node:vm';
+import {fileURLToPath} from 'node:url';
+import {createRequire} from 'node:module';
+import {championsDex as learnsetDex, snapshot, officialMoves, clientMoveIds, clientSpeciesData} from '../champions-data.mjs';
+
+const scriptDir = path.dirname(fileURLToPath(import.meta.url));
+const repoRoot = path.resolve(scriptDir, '..', '..');
+const sourcePath = path.join(
+  repoRoot,
+  'external',
+  'smogon-damage-calc',
+  'src',
+  'js',
+  'data',
+  'sets',
+  'champions.js'
+);
+const localizationPath = path.join(repoRoot, 'src', 'data', 'localization', 'zh-Hans.json');
+const outputPath = path.join(repoRoot, 'src', 'data', 'damage', 'champions-presets.json');
+const packagePath = path.join(repoRoot, 'package.json');
+const require = createRequire(import.meta.url);
+const {Generations, Pokemon} = require(path.join(repoRoot, 'external', 'smogon-damage-calc', 'calc', 'dist'));
+const championsGeneration = Generations.get(0);
+
+const [source, localizationSource, packageSource] = await Promise.all([
+  readFile(sourcePath, 'utf8'),
+  readFile(localizationPath, 'utf8'),
+  readFile(packagePath, 'utf8'),
+]);
+const packageManifest = JSON.parse(packageSource);
+const pkmnDexVersion = packageManifest.devDependencies?.['@pkmn/dex'];
+const pkmnModsVersion = packageManifest.devDependencies?.['@pkmn/mods'];
+if (
+  !pkmnDexVersion ||
+  pkmnDexVersion !== pkmnModsVersion ||
+  !/^\d+\.\d+\.\d+$/.test(pkmnModsVersion)
+) {
+  throw new Error('@pkmn/dex and @pkmn/mods must be pinned to the same exact version');
+}
+const learnsetRulesetVersion = `client-v18-${officialMoves.sourceSha256['waza_learn.json'].slice(0, 12)}`;
+const learnsetDataDate = snapshot.dataDate || {
+  '0.10.11': '2026-06-18',
+}[pkmnModsVersion];
+if (!learnsetDataDate) {
+  throw new Error(`Missing Champions learnset data date for @pkmn/mods ${pkmnModsVersion}`);
+}
+const sandbox = {};
+vm.runInNewContext(source, sandbox, {filename: sourcePath});
+const setDex = sandbox.SETDEX_CHAMPIONS;
+if (!setDex || typeof setDex !== 'object') {
+  throw new Error('Unable to read SETDEX_CHAMPIONS');
+}
+
+const localization = JSON.parse(localizationSource);
+const entityLookup = new Map();
+for (const entry of localization) {
+  entityLookup.set(`${entry.entityType}:${normalize(entry.showdownId)}`, entry);
+  entityLookup.set(`${entry.entityType}:${normalize(entry.englishName || '')}`, entry);
+}
+
+function normalize(value) {
+  return String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+}
+
+const battleOnlySourceOverrides = new Map([
+  ['aegislashboth', ['Aegislash']],
+  ['aegislashshield', ['Aegislash']],
+]);
+
+function battleOnlySources(speciesName, dexSpecies) {
+  const overridden = battleOnlySourceOverrides.get(normalize(speciesName));
+  const raw = overridden || dexSpecies?.battleOnly;
+  return (Array.isArray(raw) ? raw : raw ? [raw] : [])
+    .map(String)
+    .filter(Boolean);
+}
+
+function entity(entityType, showdownId) {
+  const known = entityLookup.get(`${entityType}:${normalize(showdownId)}`);
+  if (!known?.localizedNames?.['zh-Hans']?.length) {
+    throw new Error(`Missing Chinese ${entityType} ${showdownId}; regenerate localization before exporting presets.`);
+  }
+  return {
+    entityType,
+    canonicalId: known?.canonicalId || `${entityType}.${normalize(showdownId)}`,
+    showdownId: known?.showdownId || showdownId,
+    displayName: known?.localizedNames?.['zh-Hans']?.[0] || known?.englishName || showdownId,
+    source: 'preset',
+  };
+}
+
+function statPoints(input = {}) {
+  const aliases = {hp: 'hp', at: 'atk', atk: 'atk', df: 'def', def: 'def', sa: 'spa', spa: 'spa', sd: 'spd', spd: 'spd', sp: 'spe', spe: 'spe'};
+  return Object.fromEntries(
+    Object.entries(input)
+      .map(([key, value]) => [aliases[key], value])
+      .filter(([key, value]) => key && Number.isFinite(value))
+  );
+}
+
+function actualStats(speciesName, profile) {
+  try {
+    const pokemon = new Pokemon(0, speciesName, {
+      level: 50,
+      evs: statPoints(profile.sps || profile.evs),
+      ...(profile.nature ? {nature: profile.nature} : {}),
+      ...(profile.ability ? {ability: profile.ability} : {}),
+      ...(profile.item ? {item: profile.item} : {}),
+    });
+    return pokemon.rawStats;
+  } catch {
+    return undefined;
+  }
+}
+
+const battleTypes = [...championsGeneration.types]
+  .map(type => type.name)
+  .filter(type => type !== '???');
+
+function defensiveTypeMatchups(defenderTypes) {
+  const grouped = {'0': [], '0.25': [], '0.5': [], '2': [], '4': []};
+  for (const attackTypeName of battleTypes) {
+    const attackType = championsGeneration.types.get(normalize(attackTypeName));
+    if (!attackType) continue;
+    const multiplier = defenderTypes.reduce(
+      (value, defenderType) => value * (attackType.effectiveness[defenderType] ?? 1),
+      1
+    );
+    const key = String(multiplier);
+    if (grouped[key]) grouped[key].push(attackTypeName);
+  }
+  return grouped;
+}
+
+const formGroupsByFamily = new Map();
+const configurationGroupsBySource = new Map();
+const speciesForms = [];
+for (const entry of localization.filter(item => item.entityType === 'species')) {
+  const speciesData = championsGeneration.species.get(normalize(entry.showdownId));
+  if (!speciesData) continue;
+  const dexSpecies = learnsetDex.species.get(speciesData.name);
+  const familyName = speciesData.baseSpecies || speciesData.name;
+  const familyId = normalize(familyName);
+  const learnableMoves = clientMoveIds(speciesData.name).map(moveId => {
+    const moveData = championsGeneration.moves.get(moveId);
+    if (!moveData) throw new Error(`Missing calculator move ${moveId} for ${speciesData.name}; cannot drop a client move.`);
+    return {
+      move: entity('move', moveData.name),
+      source: 'CHAMPIONS_SNAPSHOT',
+      basePower: moveData.basePower || 0,
+      category: moveData.category || 'Status',
+    };
+  }).sort((left, right) => left.move.displayName.localeCompare(right.move.displayName, 'zh-Hans'));
+  const abilityNames = clientSpeciesData(speciesData.name).abilities;
+  const abilities = [...new Map(abilityNames.map(name => [normalize(name), entity('ability', name)])).values()];
+  const configurationSources = battleOnlySources(speciesData.name, dexSpecies);
+  const configurationShareGroupId = configurationSources.length > 0
+    ? `battle.${configurationSources.map(normalize).sort().join('.')}`
+    : null;
+  const forms = formGroupsByFamily.get(familyId) || [];
+  const form = {
+    familyId,
+    ...(configurationShareGroupId ? {configurationShareGroupId} : {}),
+    species: entity('species', speciesData.name),
+    types: speciesData.types,
+    typeMatchups: defensiveTypeMatchups(speciesData.types),
+    baseStats: speciesData.baseStats,
+    abilities,
+    learnableMoves,
+    ...(speciesData.abilities?.['0'] ? {defaultAbility: entity('ability', speciesData.abilities['0'])} : {}),
+  };
+  forms.push(form);
+  speciesForms.push(form);
+  formGroupsByFamily.set(familyId, forms);
+  for (const source of configurationSources) {
+    const sourceId = normalize(source);
+    const groups = configurationGroupsBySource.get(sourceId) || new Set();
+    groups.add(configurationShareGroupId);
+    configurationGroupsBySource.set(sourceId, groups);
+  }
+}
+
+for (const form of speciesForms) {
+  if (form.configurationShareGroupId) continue;
+  const groups = configurationGroupsBySource.get(normalize(form.species.showdownId));
+  if (groups?.size === 1) {
+    form.configurationShareGroupId = [...groups][0];
+  }
+}
+
+const formGroups = [...formGroupsByFamily.entries()]
+  .filter(([, forms]) => forms.length > 1)
+  .map(([familyId, forms]) => ({
+    familyId,
+    forms: forms.sort((left, right) => {
+      const leftMega = /-mega(?:-|$)/i.test(left.species.showdownId) ? 1 : 0;
+      const rightMega = /-mega(?:-|$)/i.test(right.species.showdownId) ? 1 : 0;
+      return leftMega - rightMega || left.species.showdownId.localeCompare(right.species.showdownId);
+    }),
+  }))
+  .sort((left, right) => left.familyId.localeCompare(right.familyId));
+
+const species = Object.entries(setDex).map(([upstreamSpeciesName, profiles]) => {
+  const speciesName = upstreamSpeciesName === 'Aegislash' ? 'Aegislash-Shield' : upstreamSpeciesName;
+  const speciesEntity = entity('species', speciesName);
+  const form = speciesForms.find(form => form.species.canonicalId === speciesEntity.canonicalId);
+  if (!form) throw new Error(`Missing client form for preset species ${speciesName}`);
+  const legalMoves = new Set(form.learnableMoves.map(entry => normalize(entry.move.showdownId)));
+  const legalAbility = name => form.abilities.some(ability => normalize(ability.showdownId) === normalize(name));
+  return {
+    species: speciesEntity,
+    profiles: Object.entries(profiles).map(([profileName, profile], index) => ({
+      profileId: `smogon.${normalize(speciesEntity.showdownId)}.${index + 1}`,
+      profileName,
+      source: 'OPEN_SOURCE_PRESET',
+      level: 50,
+      statPoints: statPoints(profile.sps || profile.evs),
+      ...(actualStats(speciesEntity.showdownId, profile)
+        ? {actualStats: actualStats(speciesEntity.showdownId, profile)}
+        : {}),
+      ...(profile.nature ? {statAlignment: entity('nature', profile.nature)} : {}),
+      ...(profile.ability ? {
+        ability: legalAbility(profile.ability) ? entity('ability', profile.ability) : form.defaultAbility,
+        ...(!legalAbility(profile.ability) ? {excludedUpstreamAbility: profile.ability} : {}),
+      } : {}),
+      ...(profile.item ? {item: entity('item', profile.item)} : {}),
+      excludedUpstreamMoves: (profile.moves || []).filter(moveName => !legalMoves.has(normalize(moveName))),
+      moves: (profile.moves || []).filter(moveName => legalMoves.has(normalize(moveName))).map(moveName => {
+        const moveData = championsGeneration.moves.get(normalize(moveName));
+        return {
+          move: entity('move', moveName),
+          source: 'PROFILE_PRESET',
+          basePower: moveData?.basePower || 0,
+          category: moveData?.category || 'Status',
+        };
+      }),
+      notes: ['Smogon Champions preset; this is a calculation assumption, not a confirmed opponent build.'],
+    })),
+  };
+}).sort((left, right) => left.species.showdownId.localeCompare(right.species.showdownId));
+
+const output = {
+  schemaVersion: 6,
+  source: 'external/smogon-damage-calc/src/js/data/sets/champions.js',
+  learnsetSource: 'Champions client Master Data v18 waza_learn + waza.available',
+  learnsetClientCatalog: {masterDataVersion: 18, availableMoves: officialMoves.entries.length, forms: officialMoves.forms.length, sourceSha256: officialMoves.sourceSha256},
+  learnsetVersion: officialMoves.sourceSha256['waza_learn.json'],
+  learnsetBasePackageVersion: pkmnModsVersion,
+  learnsetRulesetVersion,
+  learnsetPoolSource: 'CHAMPIONS_SNAPSHOT',
+  learnsetDataDate,
+  learnsetPolicy: 'Exact client form learnset intersected with client available moves. Missing calculator or Chinese entries fail export.',
+  licenseAssets: [
+    'licenses/smogon-damage-calc-MIT.txt',
+    'licenses/pkmn-ps-MIT.txt',
+    'licenses/pokemon-showdown-MIT.txt',
+  ],
+  speciesCount: species.length,
+  profileCount: species.reduce((count, entry) => count + entry.profiles.length, 0),
+  formGroupCount: formGroups.length,
+  speciesFormCount: speciesForms.length,
+  moveTypes: Object.fromEntries(
+    [...championsGeneration.moves]
+      .map(move => [normalize(move.name), move.type || '???'])
+      .sort(([left], [right]) => left.localeCompare(right))
+  ),
+  moveMetadata: Object.fromEntries([...championsGeneration.moves].map(move => {
+    const dex = learnsetDex.moves.get(move.name);
+    return [normalize(move.name), {basePower: move.basePower, category: move.category, accuracy: dex.accuracy, basePP: dex.pp, priority: move.priority || 0}];
+  })),
+  movePriorities: Object.fromEntries(
+    [...championsGeneration.moves]
+      .filter(move => move.priority)
+      .map(move => [normalize(move.name), move.priority])
+      .sort(([left], [right]) => left.localeCompare(right))
+  ),
+  natures: [...championsGeneration.natures].map(nature => ({
+    nature: entity('nature', nature.name),
+    plus: nature.plus,
+    minus: nature.minus,
+  })).sort((left, right) => left.nature.displayName.localeCompare(right.nature.displayName, 'zh-Hans')),
+  speciesForms: speciesForms.sort((left, right) => left.species.showdownId.localeCompare(right.species.showdownId)),
+  species,
+};
+
+await mkdir(path.dirname(outputPath), {recursive: true});
+await writeFile(outputPath, `${JSON.stringify(output, null, 2)}\n`, 'utf8');
+console.log(`Wrote ${output.speciesCount} species and ${output.profileCount} profiles to ${outputPath}`);
