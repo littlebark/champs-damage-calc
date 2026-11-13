@@ -110,14 +110,10 @@ powershell -NoProfile -ExecutionPolicy Bypass -File android\tools\android\run-gr
 - 首次 `git add` 干跑：317 个文件、约 66.8MB；`reference/`、`build/`、`.gradle/`、`.kotlin/`、`.android-tools/`、`node_modules/`、`*.apk`、`local.properties`、`__pycache__/` 均未进暂存。
 - 网页旧基线数值不得漂移：基础 200~236 OHKO 9/16；生命宝珠 260~306；特攻+1 300~354；防御+1 134~158；适应力 268~316；湿润之声精神噪音打水河马 180~212（激流对照 60~71）；飘浮免疫地震 0~0。改内核后跑 `tests/verify_screenshot.py` 等回归核对。
 
-## 10. 首次推私有仓库建议步骤
+## 10. 私有仓库（已推送）
 
-```powershell
-# 在项目根
-git init
-git add .
-git status            # 确认 reference/、build/、.android-tools/、*.apk 未被列入
-git commit -m "chore: scaffold android assistant; freeze web calculator as validation baseline"
-git remote add origin <你的私有仓库 URL>
-git push -u origin main
-```
+- 远程：`https://github.com/littlebark/champs-damage-calc.git`，分支 `main`（已跟踪 `origin/main`）。
+- 首次提交：`72744d6` — "chore: scaffold Android assistant; keep web calculator as offline validation baseline"，316 个文件。
+- 提交前干跑已确认：`reference/`、`build/`、`.gradle/`、`.kotlin/`、`.android-tools/`、`node_modules/`、`*.apk`、`local.properties`、`__pycache__/`、签名私钥均未入库。
+- 本地续作时常规流程：`git add -A` → `git commit -m "..."` → `git push`。
+- 注：首次提交仍包含待裁剪的队伍码/Integrity/UpdateManager 相关源码与测试，属 baseline 副本；按第 8 节优先级逐组清理，每组编译验证后再提交。
