@@ -79,6 +79,8 @@ internal class BattleOverlayController(
     private val shouldAutoOpenDirectHud: () -> Boolean,
     private val onRecognizeTeamPreview: () -> Unit,
     private val onRecognizeOwnTeam: () -> Unit,
+    /** 重新抓一帧、重新识别双方并按当前画面算伤害（每回合都能重算）。 */
+    private val onRecalculateFromScreen: () -> Unit = {},
 ) {
     private data class PanelCalculationBinding(
         val ownTeam: SavedTeam,
@@ -448,6 +450,7 @@ internal class BattleOverlayController(
             selectedOwnSlot = state.ownSlot,
             selectedOpponentSlot = state.opponentSlot,
             speedActions = directHudSpeedActions(session, ownTeam),
+            speedTableValues = directHudSpeedValues(state, effectiveOwnTeam, effectiveOpponentTeam),
             trickRoom = state.speedLine.trickRoom,
             statusText = directHudStatusText(state),
             assumptionOptions = assumptionProfiles.map {
@@ -520,7 +523,13 @@ internal class BattleOverlayController(
             previewCapturedAt = "",
             selectedOwnTeamId = team.id,
             opponentTeam = listOf(localizedOpponent),
-            calculation = BattleCalculationState(battleType = "SINGLE", spread = false),
+            calculation = BattleCalculationState(
+                battleType = "SINGLE",
+                spread = false,
+                // 快照流程就是「按当前画面算伤害」，必须一进来就是计算模式，
+                // 否则 HUD 只会摆空红框，数字永远不排下去。
+                directHud = BattleDirectHudState(mode = BattleDirectHudMode.CALCULATION),
+            ),
         )
         runCatching { sessionRepository.save(session) }.onFailure {
             Log.e("BattleOverlay", "Could not save snapshot session", it)
@@ -528,8 +537,7 @@ internal class BattleOverlayController(
             return
         }
         battleContextCache = null
-        panelDamageCache.clear()
-        directDamageCache.clear()
+        // 伤害缓存保留：相同阵容组合下一回合直接命中。
         publish("按当前画面计算：${localizedOwn.displayName} 对 ${localizedOpponent.displayName}")
         showDirectHud()
     }
@@ -784,8 +792,15 @@ internal class BattleOverlayController(
     private fun cycleDirectHudMode() {
         val directContext = loadDirectHudContext() ?: return
         val state = directContext.session.calculation
+        val nextMode = nextBattleDirectHudMode(state.directHud.mode)
+        if (nextMode == BattleDirectHudMode.CALCULATION) {
+            // 每回合画面都不同（换前场、掉血、招式次数变化），所以点「计算伤害」
+            // 必须重新抓帧识别，而不是拿上一回合的 session 直接算。
+            onRecalculateFromScreen()
+            return
+        }
         val changed = directContext.session.copy(calculation = state.copy(
-            directHud = state.directHud.copy(mode = nextBattleDirectHudMode(state.directHud.mode)),
+            directHud = state.directHud.copy(mode = nextMode),
         ))
         saveSession(changed)
         showDirectHud(directContext.copy(session = changed))
@@ -818,6 +833,38 @@ internal class BattleOverlayController(
         )
         saveSession(changed)
         showDirectHud(directContext.copy(session = changed))
+    }
+
+    /**
+     * HUD 速度行：只给四个数。
+     * 1) 我方当前宝可梦实际速度；2) 对方 2 点速度；3) 对方 32 点速度；
+     * 4) 对方 32 点速度 + 性格 ×1.1。
+     */
+    private fun directHudSpeedValues(
+        state: BattleCalculationState,
+        effectiveOwnTeam: List<PokemonConfig>,
+        effectiveOpponentTeam: List<EntityValue>,
+    ): List<String> {
+        val own = effectiveOwnTeam.getOrNull(state.ownSlot)
+        val ownSpeed = own?.actualStats?.spe?.toIntOrNull()?.takeIf { it > 0 }
+            ?: own?.let {
+                presetRepository.speedStatFor(
+                    it.species,
+                    it.statPoints.spe.toIntOrNull() ?: 0,
+                    natureBoost = false,
+                )
+            }
+        val opponent = effectiveOpponentTeam.getOrNull(state.opponentSlot)
+        val opponentSpeeds = if (opponent == null) {
+            listOf(null, null, null)
+        } else {
+            listOf(
+                presetRepository.speedStatFor(opponent, 2, natureBoost = false),
+                presetRepository.speedStatFor(opponent, 32, natureBoost = false),
+                presetRepository.speedStatFor(opponent, 32, natureBoost = true),
+            )
+        }
+        return listOf(ownSpeed?.toString().orEmpty()) + opponentSpeeds.map { it?.toString().orEmpty() }
     }
 
     private fun directHudSpeedActions(session: BattleSession, ownTeam: SavedTeam): List<SpeedLineAction> {
@@ -873,7 +920,11 @@ internal class BattleOverlayController(
         val cacheKey: String,
     )
 
-    private fun prepareDirectDamage(session: BattleSession, ownTeam: SavedTeam): PreparedDirectDamage {
+    private fun prepareDirectDamage(
+        session: BattleSession,
+        ownTeam: SavedTeam,
+        singleMoveId: String? = null,
+    ): PreparedDirectDamage {
         val state = session.calculation
         val own = presetRepository.effectiveOwnPokemon(
             ownTeam.pokemon[state.ownSlot],
@@ -890,7 +941,7 @@ internal class BattleOverlayController(
         )
         val directSession = session.copy(calculation = state.copy(
             direction = "OWN_TO_OPPONENT",
-            selectedMoveId = null,
+            selectedMoveId = singleMoveId,
         ))
         val request = buildBattleDamageRequest(
             directSession,
@@ -898,10 +949,22 @@ internal class BattleOverlayController(
             preset,
             emptyList(),
             presetRepository,
-            allOwnMoves = true,
+            allOwnMoves = singleMoveId == null,
             tierDefenderProfile = true,
         )
-        return PreparedDirectDamage(request, configuredMoves, battleDamageCacheKey(request))
+        val parsedMoves = if (singleMoveId == null) {
+            configuredMoves
+        } else {
+            val key = singleMoveId.lowercase().replace(Regex("[^a-z0-9]+"), "")
+            configuredMoves.filter {
+                it.entity.showdownId.lowercase().replace(Regex("[^a-z0-9]+"), "") == key
+            }
+        }
+        return PreparedDirectDamage(
+            request,
+            parsedMoves,
+            battleDamageCacheKey(request) + "|" + (singleMoveId ?: "ALL"),
+        )
     }
 
     private fun scheduleDirectDamage(
@@ -938,8 +1001,8 @@ internal class BattleOverlayController(
                     onSuccess = { raw ->
                         runCatching { parseBattleDirectDamageValues(raw, prepared.configuredMoves) }
                             .onSuccess { values ->
-                                directDamageCache[prepared.cacheKey] = values
                                 directOverlay.updateDamage(values)
+                                fillMissingDirectDamage(session, ownTeam, prepared, values, generation)
                             }
                             .onFailure {
                                 Log.e("BattleOverlay", "Could not parse direct HUD damage", it)
@@ -953,6 +1016,52 @@ internal class BattleOverlayController(
                 )
             }
         }, if (retry == 0) 100 else 0)
+    }
+
+    /**
+     * 一次全招计算里，如果只回来了一部分招式（引擎按招式命中或识别时漏了招式），
+     * 这里对缺的那几栏单独补算，保证四个红框都尽量有数；变化招不补算。
+     */
+    private fun fillMissingDirectDamage(
+        session: BattleSession,
+        ownTeam: SavedTeam,
+        prepared: PreparedDirectDamage,
+        initial: List<String>,
+        generation: Int,
+        merged: MutableList<String> = initial.toMutableList(),
+        remaining: MutableList<Int> = (0 until 4).filter { index ->
+            val move = prepared.configuredMoves.getOrNull(index)
+            (move?.basePower ?: 0) > 0 && initial.getOrNull(index).orEmpty().isBlank()
+        }.toMutableList(),
+    ) {
+        if (remaining.isEmpty()) {
+            directDamageCache[prepared.cacheKey] = merged.toList()
+            return
+        }
+        val slot = remaining.removeAt(0)
+        val move = prepared.configuredMoves.getOrNull(slot)
+        if (move == null) {
+            handler.post { fillMissingDirectDamage(session, ownTeam, prepared, initial, generation, merged, remaining) }
+            return
+        }
+        val single = runCatching { prepareDirectDamage(session, ownTeam, move.entity.showdownId) }.getOrNull()
+        if (single == null || single.request.isEmpty()) {
+            handler.post { fillMissingDirectDamage(session, ownTeam, prepared, initial, generation, merged, remaining) }
+            return
+        }
+        runtime.calculate(single.request) { rawResult ->
+            rawResult.onSuccess { raw ->
+                runCatching { parseBattleDirectDamageValues(raw, single.configuredMoves).firstOrNull() }
+                    .getOrNull()
+                    ?.takeIf { it.isNotBlank() }
+                    ?.let { merged[slot] = it }
+            }
+            handler.post {
+                if (generation != directCalculationGeneration || !directOverlay.isCalculationShown) return@post
+                directOverlay.updateDamage(merged)
+                fillMissingDirectDamage(session, ownTeam, prepared, initial, generation, merged, remaining)
+            }
+        }
     }
 
     fun closeAll() {

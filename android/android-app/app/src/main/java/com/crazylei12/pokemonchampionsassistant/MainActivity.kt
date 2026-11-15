@@ -15,6 +15,8 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -34,6 +36,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -47,6 +50,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -57,7 +61,9 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -70,10 +76,16 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -106,12 +118,21 @@ class MainActivity : ComponentActivity() {
     }
 
     fun requestOverlayPermission() {
-        startActivity(
-            Intent(
-                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                Uri.parse("package:$packageName"),
-            )
+        // MIUI / HyperOS 会忽略 ACTION_MANAGE_OVERLAY_PERMISSION 里的 package 参数，
+        // 直接把「显示在其他应用的上层」的全量列表铺出来，只能靠用户自己滚动查找。
+        // 先试 MIUI 自带的应用权限编辑页（直接落在本应用），失败再退回标准入口。
+        val miuiEditor = Intent("miui.intent.action.APP_PERM_EDITOR")
+            .putExtra("extra_pkgname", packageName)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        val opened = runCatching { startActivity(miuiEditor) }.isSuccess
+        if (opened) return
+        val standard = Intent(
+            Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+            Uri.parse("package:$packageName"),
         )
+        runCatching { startActivity(standard) }.onFailure {
+            runCatching { startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION)) }
+        }
     }
 
     fun startOwnTeamCapture(mode: BattleAssistantMode = BattleAssistantMode.STANDARD) {
@@ -135,30 +156,51 @@ class MainActivity : ComponentActivity() {
 
 }
 
-private val AppColors = darkColorScheme(
-    primary = Color(0xFFFFD54F),
-    onPrimary = Color(0xFF281E00),
-    secondary = Color(0xFF77D7C4),
-    background = Color(0xFF0E1420),
-    surface = Color(0xFF171F2E),
-    surfaceVariant = Color(0xFF263145),
-    onBackground = Color(0xFFF1F4FF),
-    onSurface = Color(0xFFF1F4FF),
+private val AppColors = lightColorScheme(
+    primary = Color(0xFF1A73E8),
+    onPrimary = Color(0xFFFFFFFF),
+    primaryContainer = Color(0xFFD6E4FF),
+    onPrimaryContainer = Color(0xFF001936),
+    secondary = Color(0xFF00897B),
+    onSecondary = Color(0xFFFFFFFF),
+    secondaryContainer = Color(0xFFD5EFEA),
+    onSecondaryContainer = Color(0xFF00201B),
+    tertiary = Color(0xFFE8710A),
+    onTertiary = Color(0xFFFFFFFF),
+    tertiaryContainer = Color(0xFFFFE0C7),
+    onTertiaryContainer = Color(0xFF331300),
+    background = Color(0xFFF2F3F7),
+    onBackground = Color(0xFF1B1C1F),
+    surface = Color(0xFFFFFFFF),
+    onSurface = Color(0xFF1B1C1F),
+    surfaceVariant = Color(0xFFF4F5F8),
+    onSurfaceVariant = Color(0xFF44474D),
+    surfaceContainerLowest = Color(0xFFFFFFFF),
+    surfaceContainerLow = Color(0xFFFFFFFF),
+    surfaceContainer = Color(0xFFFAFBFC),
+    surfaceContainerHigh = Color(0xFFF3F4F7),
+    surfaceContainerHighest = Color(0xFFEDEFF3),
+    outline = Color(0xFFC4C7CC),
+    outlineVariant = Color(0xFFDDE0E5),
+    error = Color(0xFFC62828),
+    onError = Color(0xFFFFFFFF),
 )
 
 private enum class AppTab(val label: String, val glyph: String) {
     CALC("计算器", "⚔"),
     DEX("图鉴", "◈"),
-    TEAM("队伍", "☰"),
     BATTLE("对局", "◉"),
-    SETTINGS("设置", "⚙"),
 }
 
+private enum class AppPanel { ABOUT }
+
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ChampionsDamageApp(runtime: DamageEngineRuntime, activity: MainActivity) {
     var selectedTabName by rememberSaveable { mutableStateOf(AppTab.CALC.name) }
-    var preferredOwnTeamId by rememberSaveable { mutableStateOf<String?>(null) }
+    var activePanelName by rememberSaveable { mutableStateOf<String?>(null) }
     val selectedTab = AppTab.valueOf(selectedTabName)
+    val activePanel = activePanelName?.let { AppPanel.valueOf(it) }
     val context = LocalContext.current
     val presetRepository = remember(context) { OpponentPresetRepository(context) }
     val teamLibraryRevision by CaptureUiState.teamLibraryRevision
@@ -171,31 +213,72 @@ private fun ChampionsDamageApp(runtime: DamageEngineRuntime, activity: MainActiv
                 modifier = Modifier.size(1.dp).alpha(0f),
             )
             Scaffold(
+                containerColor = MaterialTheme.colorScheme.background,
+                topBar = {
+                    if (activePanel == null) {
+                        var menuOpen by remember { mutableStateOf(false) }
+                        TopAppBar(
+                            title = { Text(selectedTab.label, fontWeight = FontWeight.Bold) },
+                            actions = {
+                                Box {
+                                    IconButton(onClick = { menuOpen = true }) { Text("⋮") }
+                                    DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                                        DropdownMenuItem(
+                                            text = { Text("关于与更新") },
+                                            onClick = {
+                                                menuOpen = false
+                                                activePanelName = AppPanel.ABOUT.name
+                                            },
+                                        )
+                                    }
+                                }
+                            },
+                            colors = TopAppBarDefaults.topAppBarColors(
+                                containerColor = MaterialTheme.colorScheme.surface,
+                            ),
+                        )
+                    } else {
+                        TopAppBar(
+                            title = {
+                                Text("关于与更新", fontWeight = FontWeight.Bold)
+                            },
+                            navigationIcon = {
+                                IconButton(onClick = { activePanelName = null }) { Text("←") }
+                            },
+                            colors = TopAppBarDefaults.topAppBarColors(
+                                containerColor = MaterialTheme.colorScheme.surface,
+                            ),
+                        )
+                    }
+                },
                 bottomBar = {
-                    NavigationBar {
-                        AppTab.entries.forEach { tab ->
-                            NavigationBarItem(
-                                selected = tab == selectedTab,
-                                onClick = { selectedTabName = tab.name },
-                                icon = { Text(tab.glyph) },
-                                label = { Text(tab.label) },
-                            )
+                    if (activePanel == null) {
+                        NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
+                            AppTab.entries.forEach { tab ->
+                                NavigationBarItem(
+                                    selected = tab == selectedTab,
+                                    onClick = { selectedTabName = tab.name },
+                                    icon = { Text(tab.glyph) },
+                                    label = { Text(tab.label) },
+                                )
+                            }
                         }
                     }
                 },
             ) { padding ->
-                Surface(Modifier.fillMaxSize().padding(padding)) {
+                Surface(
+                    Modifier.fillMaxSize().padding(padding),
+                    color = MaterialTheme.colorScheme.background,
+                ) {
                     teamsResult.fold(
                         onSuccess = { teams ->
-                            when (selectedTab) {
-                                AppTab.CALC -> ManualCalculatorScreen(teams, runtime, preferredOwnTeamId, presetRepository)
-                                AppTab.DEX -> PokedexScreen(repository = presetRepository)
-                                AppTab.TEAM -> HomeScreen(teams, runtime) { teamId ->
-                                    preferredOwnTeamId = teamId
-                                    selectedTabName = AppTab.CALC.name
+                            when (activePanel) {
+                                AppPanel.ABOUT -> SettingsScreen(runtime)
+                                null -> when (selectedTab) {
+                                    AppTab.CALC -> ManualCalculatorScreen(runtime, presetRepository)
+                                    AppTab.DEX -> PokedexScreen(repository = presetRepository)
+                                    AppTab.BATTLE -> OwnTeamCaptureScreen(activity, teams, presetRepository)
                                 }
-                                AppTab.BATTLE -> OwnTeamCaptureScreen(activity, teams, presetRepository)
-                                AppTab.SETTINGS -> SettingsScreen(runtime, teams)
                             }
                         },
                         onFailure = { error -> PlaceholderScreen("队伍资源加载失败", error.message.orEmpty()) },
@@ -246,6 +329,10 @@ private fun OwnTeamCaptureScreen(
             Text(if (overlayAllowed) "悬浮窗权限：已授予" else "悬浮窗权限：尚未授予")
             if (!overlayAllowed) {
                 Button(onClick = activity::requestOverlayPermission) { Text("授予悬浮窗权限") }
+                Text(
+                    "系统列表按拼音排序，本应用叫「冠军伤害计算器」，排在 G 区（列表靠后位置）；找不到就往下滚。",
+                    style = MaterialTheme.typography.bodySmall,
+                )
             }
             Button(onClick = { activity.startOwnTeamCapture() }, enabled = !running) {
                 Text(if (running) "对局助手运行中" else "启动对局助手（悬浮球）")
@@ -259,7 +346,7 @@ private fun OwnTeamCaptureScreen(
             Text("对局中只要能看到对手是谁，就能直接开 HUD：选我方队伍 + 选当前对手，对方加点按三档估算。")
             Text("适合临时开一局、或懒得走阵容识别的情况。")
             if (teams.isEmpty()) {
-                Text("还没有我方队伍：可以先用上面的「录入我的队伍」，或在「队伍」页手动建一支。")
+                Text("还没有我方队伍：先用上面的「录入我的队伍」把阵容录进本机。")
             } else {
                 Text("我方队伍")
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -327,949 +414,6 @@ private fun OwnTeamCaptureScreen(
     }
 }
 
-@Composable
-private fun HomeScreen(teams: List<SavedTeam>, runtime: DamageEngineRuntime, openManual: (String?) -> Unit) {
-    val context = LocalContext.current
-    var userPresetRevision by remember { mutableStateOf(0) }
-    var managingUserPresets by remember { mutableStateOf(false) }
-    var importingShowdown by remember { mutableStateOf(false) }
-    var importingTeamCode by remember { mutableStateOf(false) }
-    var teamCodeImportMessage by remember { mutableStateOf("") }
-    var renameTarget by remember { mutableStateOf<SavedTeam?>(null) }
-    var previewTarget by remember { mutableStateOf<SavedTeam?>(null) }
-    var editTarget by remember { mutableStateOf<SavedTeam?>(null) }
-    var deleteTarget by remember { mutableStateOf<SavedTeam?>(null) }
-    var renameText by remember { mutableStateOf("") }
-    var renameError by remember { mutableStateOf("") }
-    var deleteError by remember { mutableStateOf("") }
-    var resetCorruptedPresetStorage by remember { mutableStateOf(false) }
-    var presetStorageMessage by remember { mutableStateOf("") }
-    val userPresetRepository = remember(context, userPresetRevision) { OpponentPresetRepository(context) }
-    val userPresets = remember(userPresetRepository) { userPresetRepository.userPresets() }
-    val userPresetStorageProblem = remember(userPresetRepository) {
-        userPresetRepository.userPresetStorageProblem()
-    }
-
-    if (importingShowdown) {
-        ShowdownImportScreen(onClose = { importingShowdown = false }, onSaved = { name ->
-            CaptureUiState.teamLibraryRevision.value += 1
-            teamCodeImportMessage = "已把“$name”保存到我的队伍。"
-            importingShowdown = false
-        })
-        return
-    }
-
-    if (importingTeamCode) {
-        TeamCodeImportScreen(
-            onClose = { importingTeamCode = false },
-            onSavedOwnTeam = { name ->
-                CaptureUiState.teamLibraryRevision.value += 1
-                teamCodeImportMessage = "已把“$name”保存到我的队伍。"
-                importingTeamCode = false
-            },
-            onSavedOpponentPresets = { name ->
-                userPresetRevision += 1
-                teamCodeImportMessage = "已把 6 只宝可梦保存为“$name”对手配置。"
-                importingTeamCode = false
-            },
-        )
-        return
-    }
-
-    if (managingUserPresets) {
-        UserOpponentPresetManagerScreen(
-            onClose = { managingUserPresets = false },
-            onChanged = { userPresetRevision += 1 },
-        )
-        return
-    }
-
-    editTarget?.let { team ->
-        TeamEditorScreen(
-            team = team,
-            onClose = { editTarget = null },
-            onSaved = {
-                CaptureUiState.teamLibraryRevision.value += 1
-                editTarget = null
-            },
-        )
-        return
-    }
-
-    renameTarget?.let { team ->
-        AlertDialog(
-            onDismissRequest = { renameTarget = null },
-            title = { Text("重命名队伍") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(
-                        value = renameText,
-                        onValueChange = { renameText = it; renameError = "" },
-                        label = { Text("队伍名称") },
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                        keyboardActions = dismissingKeyboardActions(),
-                        singleLine = true,
-                        isError = renameError.isNotBlank(),
-                        supportingText = renameError.takeIf(String::isNotBlank)?.let { message ->
-                            { Text(message) }
-                        },
-                    )
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    runCatching { TeamRepository.rename(context, team.id, renameText) }
-                        .onSuccess {
-                            CaptureUiState.teamLibraryRevision.value += 1
-                            renameTarget = null
-                        }
-                        .onFailure { renameError = it.message ?: "重命名失败" }
-                }) { Text("保存") }
-            },
-            dismissButton = {
-                TextButton(onClick = { renameTarget = null }) { Text("取消") }
-            },
-        )
-    }
-
-    previewTarget?.let { team ->
-        TeamPreviewDialog(team = team, onDismiss = { previewTarget = null })
-    }
-
-    deleteTarget?.let { team ->
-        AlertDialog(
-            onDismissRequest = { deleteTarget = null; deleteError = "" },
-            title = { Text("删除队伍") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("确定删除“${team.name}”吗？此操作无法撤销。")
-                    if (deleteError.isNotBlank()) Text(deleteError, color = Color(0xFFFF8A80))
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    runCatching { TeamRepository.delete(context, team.id) }
-                        .onSuccess {
-                            CaptureUiState.teamLibraryRevision.value += 1
-                            deleteTarget = null
-                            deleteError = ""
-                        }
-                        .onFailure { deleteError = it.message ?: "删除失败" }
-                }) { Text("确认删除", color = Color(0xFFFF8A80)) }
-            },
-            dismissButton = {
-                TextButton(onClick = { deleteTarget = null; deleteError = "" }) { Text("取消") }
-            },
-        )
-    }
-
-    if (resetCorruptedPresetStorage) {
-        AlertDialog(
-            onDismissRequest = { resetCorruptedPresetStorage = false },
-            title = { Text("备份损坏文件并重置？") },
-            text = {
-                Text(
-                    "原始损坏文件会先完整保留在 App 私有目录中，再重建一个空的保存配置库。已有配置不会被静默覆盖，但损坏文件中的内容无法自动恢复；如有完整数据备份，也可以先取消并改用整包导入。",
-                )
-            },
-            confirmButton = {
-                Button(onClick = {
-                    runCatching {
-                        userPresetRepository.preserveCorruptedUserPresetFileAndReset()
-                    }.onSuccess { recoveryName ->
-                        presetStorageMessage = "已保留原文件副本：$recoveryName；现在可以重新保存或导入配置。"
-                        resetCorruptedPresetStorage = false
-                        userPresetRevision += 1
-                    }.onFailure {
-                        presetStorageMessage = it.message ?: "无法保留损坏文件并重置"
-                        resetCorruptedPresetStorage = false
-                    }
-                }) { Text("保留副本并重置") }
-            },
-            dismissButton = {
-                TextButton(onClick = { resetCorruptedPresetStorage = false }) { Text("取消") }
-            },
-        )
-    }
-
-    Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
-    ) {
-        Text("Pokémon Champions", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-        Text("公开队伍码", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.primary)
-        OutlinedCard(Modifier.fillMaxWidth()) {
-            Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("输入 Pokémon Champions 游戏内的十位公开码，核对完整队伍后再选择保存位置。")
-                Button(
-                    onClick = { importingTeamCode = true },
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text("导入队伍码")
-                }
-                OutlinedButton(onClick = { importingShowdown = true }, modifier = Modifier.fillMaxWidth()) { Text("导入 PS 队伍") }
-                if (teamCodeImportMessage.isNotBlank()) {
-                    Text(teamCodeImportMessage, color = Color(0xFF80CBC4), style = MaterialTheme.typography.bodySmall)
-                }
-            }
-        }
-
-        Text("我的队伍（${teams.size}）", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-        if (teams.isEmpty()) {
-            Text("还没有保存自己的队伍。请在“对局”页启动悬浮识别并完成两张队伍截图。")
-        }
-        teams.forEach { team ->
-            OutlinedCard(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                    Text(team.name, fontWeight = FontWeight.Bold)
-                    Text(team.speciesSummary, style = MaterialTheme.typography.bodySmall)
-                    Text(
-                        if (team.damageReady) "可用于计算" else "暂不可用于计算：${team.readinessIssues.firstOrNull() ?: "存在缺失项"}",
-                        color = if (team.damageReady) Color(0xFF80CBC4) else Color(0xFFFFB74D),
-                    )
-                    val partialMoveSlots = team.pokemon.count { it.moves.size in 1..3 }
-                    if (partialMoveSlots > 0) {
-                        Text("提醒：$partialMoveSlots 只宝可梦未带满 4 个招式；空技能槽是允许的。", color = Color(0xFFFFB74D), style = MaterialTheme.typography.bodySmall)
-                    }
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(
-                            onClick = { openManual(team.id) },
-                            enabled = runtime.status.contains("已就绪") && team.damageReady,
-                        ) { Text("用于计算") }
-                        TextButton(onClick = { previewTarget = team }) { Text("预览") }
-                        TextButton(onClick = { editTarget = team }) { Text("手动调整") }
-                    }
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        TextButton(onClick = {
-                            renameTarget = team
-                            renameText = team.name
-                            renameError = ""
-                        }) { Text("重命名") }
-                        ShowdownExportButton(team.pokemon)
-                        TextButton(onClick = {
-                            deleteTarget = team
-                            deleteError = ""
-                        }) { Text("删除", color = Color(0xFFFF8A80)) }
-                    }
-                }
-            }
-        }
-
-        Text(
-            "我保存的宝可梦配置（${userPresets.size}）",
-            style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.Bold,
-        )
-        OutlinedCard(Modifier.fillMaxWidth()) {
-            Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("管理在对局悬浮面板中保存的对手预设。")
-                if (userPresetStorageProblem != null) {
-                    Text(userPresetStorageProblem, color = MaterialTheme.colorScheme.error)
-                    Text(
-                        "为防止下一次保存覆盖原文件，当前已禁止修改、删除和导出用户配置。",
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                    OutlinedButton(
-                        onClick = { resetCorruptedPresetStorage = true },
-                        modifier = Modifier.fillMaxWidth(),
-                    ) { Text("保留损坏文件副本并重置") }
-                } else {
-                    Text(
-                        if (userPresets.isEmpty()) {
-                            "还没有保存配置；可进入管理页手动选择宝可梦新建，也可在悬浮面板的“调整对手配置”中保存。"
-                        } else {
-                            "可搜索、修改或删除；删除前会再次确认。"
-                        },
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                }
-                Button(
-                    onClick = { managingUserPresets = true },
-                    enabled = userPresetStorageProblem == null,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text("新建或管理配置")
-                }
-                if (presetStorageMessage.isNotBlank()) {
-                    Text(
-                        presetStorageMessage,
-                        color = if (presetStorageMessage.startsWith("已保留")) {
-                            Color(0xFF80CBC4)
-                        } else {
-                            MaterialTheme.colorScheme.error
-                        },
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun TeamCodeImportScreen(
-    onClose: () -> Unit,
-    onSavedOwnTeam: (String) -> Unit,
-    onSavedOpponentPresets: (String) -> Unit,
-) {
-    val context = LocalContext.current
-    val repository = remember(context) { OpponentPresetRepository(context) }
-    val worker = remember(context) { TeamCodeImportWorker(context.applicationContext) }
-    var code by rememberSaveable { mutableStateOf("") }
-    var name by rememberSaveable { mutableStateOf("") }
-    var resolved by remember { mutableStateOf<ResolvedTeamCode?>(null) }
-    var pokemon by remember { mutableStateOf<List<PokemonConfig>>(emptyList()) }
-    var resolving by remember { mutableStateOf(false) }
-    var saving by remember { mutableStateOf(false) }
-    var errorMessage by remember { mutableStateOf("") }
-    val presetStorageProblem = remember(repository) { repository.userPresetStorageProblem() }
-
-    DisposableEffect(worker) {
-        onDispose(worker::close)
-    }
-
-    Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            OutlinedButton(onClick = onClose, enabled = !saving) { Text("返回") }
-            Column {
-                Text("导入队伍码", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-                Text("App 直接查询官方公开队伍", color = MaterialTheme.colorScheme.primary)
-            }
-        }
-        OutlinedTextField(
-            value = code,
-            onValueChange = { raw ->
-                code = raw.uppercase(java.util.Locale.ROOT)
-                    .filter { it in 'A'..'Z' || it in '0'..'9' }
-                    .take(10)
-                resolved = null
-                pokemon = emptyList()
-                name = ""
-                errorMessage = ""
-            },
-            enabled = !resolving,
-            label = { Text("十位公开队伍码") },
-            supportingText = { Text("${code.length}/10，例如 A4RBRNN9YE") },
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-            keyboardActions = dismissingKeyboardActions(),
-            singleLine = true,
-            isError = errorMessage.isNotBlank() && resolved == null,
-            modifier = Modifier.fillMaxWidth(),
-        )
-        Button(
-            onClick = {
-                val normalized = normalizeTeamCode(code)
-                if (normalized == null) {
-                    errorMessage = "队伍码必须是 10 位英文字母或数字"
-                    return@Button
-                }
-                resolving = true
-                errorMessage = ""
-                worker.resolve(normalized) { result ->
-                    resolving = false
-                    result.onSuccess { response ->
-                        runCatching { repository.configurationsForTeamCode(response) }
-                            .onSuccess { mapped ->
-                                resolved = response
-                                pokemon = mapped
-                                if (name.isBlank()) {
-                                    name = response.trainerName.orEmpty().take(24)
-                                }
-                            }
-                            .onFailure { errorMessage = it.message ?: "公开队伍数据无法使用" }
-                    }.onFailure { error ->
-                        errorMessage = error.message ?: "队伍码解析失败"
-                    }
-                }
-            },
-            enabled = code.length == 10 && !resolving,
-            modifier = Modifier.fillMaxWidth().height(52.dp),
-        ) {
-            Text(if (resolving) "正在解析…" else "解析并预览")
-        }
-        Text(
-            "无需启动游戏。直连需要可用的 Google Play 服务及可连接官方服务的网络。App 使用匿名游客身份查询；认证令牌和 Cookie 不会保存。截图、本地队伍和计算数据不会上传。",
-            style = MaterialTheme.typography.bodySmall,
-        )
-        if (errorMessage.isNotBlank()) {
-            Text(errorMessage, color = Color(0xFFFF8A80))
-        }
-
-        resolved?.let { team ->
-            HorizontalDivider()
-            Text(
-                buildString {
-                    append("已解析 ${team.code}")
-                    team.trainerName?.let { append(" · 公开训练家：$it") }
-                },
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-            )
-            ShowdownExportButton(pokemon)
-            pokemon.forEachIndexed { index, config ->
-                OutlinedCard(Modifier.fillMaxWidth()) {
-                    Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                        Text("${index + 1}. ${config.species.displayName}", fontWeight = FontWeight.Bold)
-                        Text(pokemonConfigSummary(config), style = MaterialTheme.typography.bodySmall)
-                    }
-                }
-            }
-            OutlinedTextField(
-                value = name,
-                onValueChange = {
-                    name = it.take(24)
-                    errorMessage = ""
-                },
-                label = { Text("配置名称") },
-                supportingText = { Text("保存为对手配置时，六只都会使用这个名称（最多 24 个字符）") },
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                keyboardActions = dismissingKeyboardActions(),
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-            )
-            Button(
-                onClick = {
-                    val normalizedName = name.trim()
-                    if (normalizedName.isBlank()) {
-                        errorMessage = "请填写配置名称"
-                        return@Button
-                    }
-                    saving = true
-                    runCatching {
-                        TeamRepository.saveImportedTeam(
-                            context = context,
-                            teamName = normalizedName,
-                            publicCode = team.code,
-                            trainerName = team.trainerName,
-                            pokemon = pokemon,
-                        )
-                    }.onSuccess {
-                        onSavedOwnTeam(normalizedName)
-                    }.onFailure {
-                        saving = false
-                        errorMessage = it.message ?: "保存我的队伍失败"
-                    }
-                },
-                enabled = !saving && name.isNotBlank(),
-                modifier = Modifier.fillMaxWidth().height(52.dp),
-            ) {
-                Text(if (saving) "正在保存…" else "保存为我的队伍")
-            }
-            OutlinedButton(
-                onClick = {
-                    val normalizedName = name.trim()
-                    if (normalizedName.isBlank()) {
-                        errorMessage = "请填写配置名称"
-                        return@OutlinedButton
-                    }
-                    saving = true
-                    runCatching { repository.saveTeamCodeAsUserPresets(normalizedName, pokemon) }
-                        .onSuccess { onSavedOpponentPresets(normalizedName) }
-                        .onFailure {
-                            saving = false
-                            errorMessage = it.message ?: "保存对手配置失败"
-                        }
-                },
-                enabled = !saving && name.isNotBlank() && presetStorageProblem == null,
-                modifier = Modifier.fillMaxWidth().height(52.dp),
-            ) {
-                Text("保存为 6 个对手配置")
-            }
-            presetStorageProblem?.let {
-                Text(it, color = Color(0xFFFF8A80), style = MaterialTheme.typography.bodySmall)
-            }
-        }
-    }
-}
-
-@Composable
-private fun UserOpponentPresetManagerScreen(
-    onClose: () -> Unit,
-    onChanged: () -> Unit,
-) {
-    val context = LocalContext.current
-    var revision by remember { mutableStateOf(0) }
-    val repository = remember(context, revision) { OpponentPresetRepository(context) }
-    val entries = remember(repository) { repository.userPresets() }
-    var query by rememberSaveable { mutableStateOf("") }
-    var createSpecies by remember { mutableStateOf<EntityValue?>(null) }
-    var choosingCreateSpecies by remember { mutableStateOf(false) }
-    var editTarget by remember { mutableStateOf<UserOpponentPresetEntry?>(null) }
-    var deleteTarget by remember { mutableStateOf<UserOpponentPresetEntry?>(null) }
-    var deleteError by remember { mutableStateOf("") }
-
-    if (choosingCreateSpecies) {
-        EntitySearchDialog(
-            title = "选择配置所属宝可梦",
-            entities = repository.speciesCatalog,
-            onDismiss = { choosingCreateSpecies = false },
-            onSelect = { selected ->
-                createSpecies = repository.localizeSpecies(selected)
-                choosingCreateSpecies = false
-            },
-        )
-    }
-
-    createSpecies?.let { species ->
-        val draft = remember(repository, species.showdownId) {
-            blankUserOpponentPresetDraft(species)
-        }
-        UserOpponentPresetEditorScreen(
-            entry = draft,
-            repository = repository,
-            onClose = { createSpecies = null },
-            onSaved = {
-                revision += 1
-                onChanged()
-                createSpecies = null
-            },
-            isCreating = true,
-            onChooseSpecies = { choosingCreateSpecies = true },
-        )
-        return
-    }
-
-    editTarget?.let { entry ->
-        UserOpponentPresetEditorScreen(
-            entry = entry,
-            repository = repository,
-            onClose = { editTarget = null },
-            onSaved = {
-                revision += 1
-                onChanged()
-                editTarget = null
-            },
-        )
-        return
-    }
-
-    deleteTarget?.let { entry ->
-        AlertDialog(
-            onDismissRequest = {
-                deleteTarget = null
-                deleteError = ""
-            },
-            title = { Text("删除保存的配置") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("确定删除“${entry.species.displayName} · ${entry.preset.profileName}”吗？此操作无法撤销。")
-                    Text("如果当前对局正在使用它，将自动回退到仍然存在的配置。", style = MaterialTheme.typography.bodySmall)
-                    if (deleteError.isNotBlank()) Text(deleteError, color = Color(0xFFFF8A80))
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    runCatching {
-                        require(repository.deleteUserPreset(entry.preset.profileId)) { "配置已不存在" }
-                    }.onSuccess {
-                        revision += 1
-                        onChanged()
-                        deleteTarget = null
-                        deleteError = ""
-                    }.onFailure {
-                        deleteError = it.message ?: "删除失败"
-                    }
-                }) { Text("确认删除", color = Color(0xFFFF8A80)) }
-            },
-            dismissButton = {
-                TextButton(onClick = {
-                    deleteTarget = null
-                    deleteError = ""
-                }) { Text("取消") }
-            },
-        )
-    }
-
-    val normalizedQuery = query.trim()
-    val displayed = remember(entries, normalizedQuery) {
-        entries.filter { entry ->
-            normalizedQuery.isBlank() ||
-                entry.species.displayName.contains(normalizedQuery, ignoreCase = true) ||
-                entry.species.showdownId.contains(normalizedQuery, ignoreCase = true) ||
-                entry.preset.profileName.contains(normalizedQuery, ignoreCase = true)
-        }.withIndex().sortedWith(
-            compareBy<IndexedValue<UserOpponentPresetEntry>> { it.value.species.displayName }
-                .thenBy(IndexedValue<UserOpponentPresetEntry>::index),
-        ).map(IndexedValue<UserOpponentPresetEntry>::value)
-    }
-
-    Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            OutlinedButton(onClick = onClose) { Text("返回") }
-            Column {
-                Text("我保存的宝可梦配置", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-                Text("共 ${entries.size} 个用户预设", color = MaterialTheme.colorScheme.primary)
-            }
-        }
-        Button(
-            onClick = { choosingCreateSpecies = true },
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Text("新建配置")
-        }
-        OutlinedTextField(
-            value = query,
-            onValueChange = { query = it },
-            label = { Text("搜索宝可梦或预设名称") },
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-            keyboardActions = dismissingKeyboardActions(),
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth(),
-        )
-        LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            if (displayed.isEmpty()) {
-                item {
-                    Text(
-                        if (entries.isEmpty()) {
-                            "还没有保存的配置。可点击上方“新建配置”手动选择宝可梦创建，也可在对局悬浮面板中保存。"
-                        } else {
-                            "没有找到匹配的配置。"
-                        },
-                        modifier = Modifier.padding(vertical = 20.dp),
-                    )
-                }
-            }
-            itemsIndexed(displayed, key = { _, entry -> entry.preset.profileId }) { _, entry ->
-                OutlinedCard(Modifier.fillMaxWidth()) {
-                    Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text(entry.species.displayName, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                        Text(entry.preset.profileName, color = MaterialTheme.colorScheme.primary)
-                        Text(userOpponentPresetSummary(entry.preset), style = MaterialTheme.typography.bodySmall)
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            TextButton(onClick = { editTarget = entry }) { Text("修改") }
-                            TextButton(onClick = {
-                                deleteError = ""
-                                deleteTarget = entry
-                            }) { Text("删除", color = Color(0xFFFF8A80)) }
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun UserOpponentPresetEditorScreen(
-    entry: UserOpponentPresetEntry,
-    repository: OpponentPresetRepository,
-    onClose: () -> Unit,
-    onSaved: () -> Unit,
-    isCreating: Boolean = false,
-    onChooseSpecies: (() -> Unit)? = null,
-) {
-    val preset = entry.preset
-    val editorKey = "${preset.profileId}|${entry.species.showdownId}|$isCreating"
-    var name by remember(editorKey) { mutableStateOf(preset.profileName) }
-    var points by remember(editorKey) { mutableStateOf(preset.statPoints) }
-    var nature by remember(editorKey) {
-        mutableStateOf(repository.natures.firstOrNull {
-            it.entity.showdownId.equals(preset.statAlignment?.showdownId, ignoreCase = true)
-        })
-    }
-    var ability by remember(editorKey) { mutableStateOf(preset.ability) }
-    var item by remember(editorKey) { mutableStateOf(preset.item) }
-    var chooseItem by remember(editorKey) { mutableStateOf(false) }
-    var saving by remember(editorKey) { mutableStateOf(false) }
-    var errorMessage by remember(editorKey) { mutableStateOf("") }
-    val abilities = remember(entry.species.showdownId, preset.ability) {
-        (listOfNotNull(preset.ability) + repository.abilitiesFor(entry.species))
-            .distinctBy { it.showdownId.lowercase() }
-    }
-
-    if (chooseItem) {
-        EntitySearchDialog(
-            title = "选择道具",
-            entities = repository.itemCatalog,
-            onDismiss = { chooseItem = false },
-            onSelect = {
-                item = it
-                chooseItem = false
-            },
-        )
-    }
-
-    Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            OutlinedButton(onClick = onClose) { Text("返回") }
-            Column {
-                Text(
-                    if (isCreating) "新建宝可梦配置" else "修改保存的配置",
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold,
-                )
-                Text(entry.species.displayName, color = MaterialTheme.colorScheme.primary)
-            }
-        }
-        onChooseSpecies?.let { chooseSpecies ->
-            OutlinedButton(
-                onClick = chooseSpecies,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text("重新选择宝可梦")
-            }
-        }
-        OutlinedTextField(
-            value = name,
-            onValueChange = {
-                name = it.take(24)
-                errorMessage = ""
-            },
-            label = { Text("预设名称") },
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-            keyboardActions = dismissingKeyboardActions(),
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth(),
-        )
-        Text("能力点（每项 0–32）", fontWeight = FontWeight.SemiBold)
-        UserPresetPointEditor(points) { points = it }
-        SimplePicker<NatureOption?>(
-            label = "性格数值修正",
-            options = listOf(null) + repository.natures,
-            selected = nature,
-            display = { it?.entity?.displayName ?: "中性（不修正）" },
-            onSelect = { nature = it },
-        )
-        SimplePicker<EntityValue?>(
-            label = "特性",
-            options = listOf(null) + abilities,
-            selected = ability,
-            display = { it?.displayName ?: "未指定" },
-            onSelect = { ability = it },
-        )
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedButton(onClick = { chooseItem = true }, modifier = Modifier.weight(1f)) {
-                Text("道具：${item?.displayName ?: "无道具"}")
-            }
-            if (item != null) TextButton(onClick = { item = null }) { Text("清除") }
-        }
-        if (preset.moves.isNotEmpty()) {
-            Text(
-                "保存时的配置招式：${preset.moves.joinToString(" / ") { it.entity.displayName }}",
-                style = MaterialTheme.typography.bodySmall,
-            )
-        }
-        Text(
-            if (isCreating) {
-                "这里设置名称、能力点、性格、特性和道具；新配置归属于所选宝可梦或具体形态，招式不固定，对局中仍可从该宝可梦的合法招式池选择。"
-            } else {
-                "这里修改名称、能力点、性格、特性和道具；宝可梦与保存时继承的招式保持不变。"
-            },
-            style = MaterialTheme.typography.bodySmall,
-        )
-        if (errorMessage.isNotBlank()) Text(errorMessage, color = Color(0xFFFF8A80))
-        Button(
-            enabled = !saving,
-            modifier = Modifier.fillMaxWidth().height(52.dp),
-            onClick = {
-                val normalizedName = name.trim()
-                if (normalizedName.isBlank()) {
-                    errorMessage = "请填写预设名称"
-                    return@Button
-                }
-                saving = true
-                errorMessage = ""
-                val updated = preset.copy(
-                    profileName = normalizedName,
-                    statPoints = points,
-                    statAlignment = nature?.entity,
-                    ability = ability,
-                    item = item,
-                )
-                runCatching {
-                    if (isCreating) {
-                        repository.saveUserPreset(entry.species, normalizedName, updated)
-                    } else {
-                        repository.updateUserPreset(entry.species, updated)
-                    }
-                }
-                    .onSuccess { onSaved() }
-                    .onFailure {
-                        saving = false
-                        errorMessage = it.message ?: "保存失败"
-                    }
-            },
-        ) {
-            Text(
-                when {
-                    saving -> "正在保存…"
-                    isCreating -> "创建配置"
-                    else -> "保存修改"
-                },
-            )
-        }
-    }
-}
-
-@Composable
-private fun UserPresetPointEditor(value: StatFields, onChange: (StatFields) -> Unit) {
-    UserPresetPointRow(
-        listOf("生命" to value.hp, "攻击" to value.atk, "防御" to value.def),
-    ) { index, text ->
-        onChange(when (index) {
-            0 -> value.copy(hp = text)
-            1 -> value.copy(atk = text)
-            else -> value.copy(def = text)
-        })
-    }
-    UserPresetPointRow(
-        listOf("特攻" to value.spa, "特防" to value.spd, "速度" to value.spe),
-    ) { index, text ->
-        onChange(when (index) {
-            0 -> value.copy(spa = text)
-            1 -> value.copy(spd = text)
-            else -> value.copy(spe = text)
-        })
-    }
-}
-
-@Composable
-private fun UserPresetPointRow(
-    values: List<Pair<String, String>>,
-    onChange: (Int, String) -> Unit,
-) {
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        values.forEachIndexed { index, (label, value) ->
-            OutlinedTextField(
-                value = value,
-                onValueChange = { raw ->
-                    val digits = raw.filter(Char::isDigit).take(2)
-                    onChange(index, digits.toIntOrNull()?.coerceAtMost(32)?.toString().orEmpty())
-                },
-                label = { Text(label) },
-                keyboardOptions = KeyboardOptions(
-                    keyboardType = KeyboardType.Number,
-                    imeAction = ImeAction.Done,
-                ),
-                keyboardActions = dismissingKeyboardActions(),
-                singleLine = true,
-                modifier = Modifier.weight(1f),
-            )
-        }
-    }
-}
-
-private fun userOpponentPresetSummary(preset: OpponentPreset): String {
-    val labels = mapOf(
-        "hp" to "HP",
-        "atk" to "攻击",
-        "def" to "防御",
-        "spa" to "特攻",
-        "spd" to "特防",
-        "spe" to "速度",
-    )
-    val points = preset.statPoints.asMap().mapNotNull { (key, value) ->
-        value.toIntOrNull()?.takeIf { it > 0 }?.let { "${labels.getValue(key)} $it" }
-    }.joinToString(" / ").ifBlank { "无能力点投入" }
-    return buildString {
-        append(points)
-        append("\n性格：${preset.statAlignment?.displayName ?: "中性"}")
-        append(" · 特性：${preset.ability?.displayName ?: "未指定"}")
-        append(" · 道具：${preset.item?.displayName ?: "无道具"}")
-    }
-}
-
-@Composable
-private fun TeamPreviewDialog(team: SavedTeam, onDismiss: () -> Unit) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(team.name) },
-        text = {
-            LazyColumn(
-                modifier = Modifier.fillMaxWidth().heightIn(max = 520.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                itemsIndexed(team.pokemon) { index, pokemon ->
-                    OutlinedCard(Modifier.fillMaxWidth()) {
-                        Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                            Text("${index + 1}. ${pokemon.species.displayName}", fontWeight = FontWeight.Bold)
-                            Text(pokemonConfigSummary(pokemon), style = MaterialTheme.typography.bodySmall)
-                        }
-                    }
-                }
-            }
-        },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("关闭") } },
-    )
-}
-
-@Composable
-private fun TeamEditorScreen(team: SavedTeam, onClose: () -> Unit, onSaved: () -> Unit) {
-    val context = LocalContext.current
-    val repository = remember(context) { OpponentPresetRepository(context) }
-    var selectedSlot by rememberSaveable(team.id) { mutableStateOf(0) }
-    var draft by remember(team.id) { mutableStateOf(team.pokemon.first()) }
-    var saving by remember { mutableStateOf(false) }
-    var errorMessage by remember { mutableStateOf("") }
-
-    LaunchedEffect(selectedSlot) {
-        draft = team.pokemon[selectedSlot]
-        errorMessage = ""
-    }
-
-    Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            OutlinedButton(onClick = onClose) { Text("返回") }
-            Column {
-                Text("手动调整队伍", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-                Text(team.name, color = MaterialTheme.colorScheme.primary)
-            }
-        }
-        SimplePicker(
-            label = "选择要调整的宝可梦",
-            options = team.pokemon.indices.toList(),
-            selected = selectedSlot,
-            display = { index -> "${index + 1}. ${team.pokemon[index].species.displayName}" },
-            onSelect = { selectedSlot = it },
-        )
-        PokemonConfigEditor(draft, repository) { draft = it }
-        if (errorMessage.isNotBlank()) Text(errorMessage, color = Color(0xFFFF8A80))
-        Button(
-            modifier = Modifier.fillMaxWidth().height(52.dp),
-            enabled = !saving,
-            onClick = {
-                saving = true
-                errorMessage = ""
-                runCatching { TeamRepository.updatePokemon(context, team.id, selectedSlot, draft) }
-                    .onSuccess { onSaved() }
-                    .onFailure {
-                        saving = false
-                        errorMessage = it.message ?: "保存失败"
-                    }
-            },
-        ) { Text(if (saving) "保存中…" else "保存本次调整") }
-    }
-}
-
-private fun pokemonConfigSummary(pokemon: PokemonConfig): String = buildString {
-    append("等级 ${pokemon.level} · 特性 ${pokemon.ability?.displayName ?: "未设置"} · 道具 ${pokemon.item?.displayName ?: "无"}")
-    append("\n性格：${pokemon.statAlignment?.displayName ?: "中性或未指定"}")
-    append("\n招式：${pokemon.moves.joinToString(" / ") { it.entity.displayName }.ifBlank { "未设置" }}")
-    append("\n实际能力：${statsSummaryText(pokemon.actualStats)}")
-    append("\n加点：${statsSummaryText(pokemon.statPoints)}")
-}
-
-private fun statsSummaryText(stats: StatFields): String = listOf(
-    "生命" to stats.hp,
-    "攻击" to stats.atk,
-    "防御" to stats.def,
-    "特攻" to stats.spa,
-    "特防" to stats.spd,
-    "速度" to stats.spe,
-).joinToString("  ") { (label, value) -> "$label ${value.ifBlank { "?" }}" }
-
 private data class CalculationUiResult(
     val direction: String,
     val attacker: String,
@@ -1322,9 +466,7 @@ private data class SavedPokemonOption(
 
 @Composable
 private fun ManualCalculatorScreen(
-    teams: List<SavedTeam>,
     runtime: DamageEngineRuntime,
-    preferredOwnTeamId: String?,
     repository: OpponentPresetRepository,
 ) {
     val catalog = repository.speciesCatalog
@@ -1337,14 +479,10 @@ private fun ManualCalculatorScreen(
 
     fun pickSpecies(id: String): EntityValue = catalog.firstOrNull { it.showdownId == id } ?: catalog.first()
 
-    val initialOwnConfig = teams.firstOrNull { it.id == preferredOwnTeamId }?.pokemon?.firstOrNull()
-        ?: teams.firstOrNull()?.pokemon?.firstOrNull()
     var ownSelection by remember {
-        mutableStateOf(
-            initialOwnConfig?.let { CalculatorPokemonState(it, "已保存队伍") } ?: defaultState(pickSpecies("Pikachu"))
-        )
+        mutableStateOf(defaultState(pickSpecies("Gardevoir")))
     }
-    var opponentSelection by remember { mutableStateOf(defaultState(pickSpecies("Armarouge"))) }
+    var opponentSelection by remember { mutableStateOf(defaultState(pickSpecies("Garchomp"))) }
     var selectedMove by rememberSaveable { mutableStateOf("") }
     var battleType by rememberSaveable { mutableStateOf("SINGLE") }
     var weather by rememberSaveable { mutableStateOf("") }
@@ -1362,18 +500,20 @@ private fun ManualCalculatorScreen(
     var calculating by remember { mutableStateOf(false) }
     var result by remember { mutableStateOf<CalculationUiResult?>(null) }
     var errorMessage by remember { mutableStateOf("") }
-
-    LaunchedEffect(preferredOwnTeamId, teams.map(SavedTeam::id)) {
-        val team = teams.firstOrNull { it.id == preferredOwnTeamId } ?: return@LaunchedEffect
-        team.pokemon.firstOrNull()?.let { ownSelection = CalculatorPokemonState(it, "已保存队伍") }
-    }
+    var pickerRequest by remember { mutableStateOf<PickerRequest?>(null) }
 
     val learnableMoves = remember(ownSelection.config.species.showdownId) {
-        repository.learnableMovesFor(ownSelection.config.species)
+        sortMovesForPicker(
+            repository.learnableMovesFor(ownSelection.config.species),
+            repository.formFor(ownSelection.config.species)?.types.orEmpty(),
+            repository::moveTypeFor,
+        )
     }
     LaunchedEffect(learnableMoves.map { it.entity.showdownId }) {
         if (learnableMoves.none { it.entity.showdownId == selectedMove }) {
-            selectedMove = learnableMoves.firstOrNull { (it.basePower ?: 0) > 0 }?.entity?.showdownId
+            val damaging = learnableMoves.filter { (it.basePower ?: 0) > 0 }
+            selectedMove = damaging.firstOrNull { normalizeShowdownId(it.entity.showdownId) !in DELAYED_DAMAGE_MOVES }?.entity?.showdownId
+                ?: damaging.firstOrNull()?.entity?.showdownId
                 ?: learnableMoves.firstOrNull()?.entity?.showdownId.orEmpty()
         }
     }
@@ -1393,7 +533,10 @@ private fun ManualCalculatorScreen(
             offenseStat,
             attackerNature,
         )
-        return ownSelection.config.copy(statPoints = points, actualStats = stats, statAlignment = null)
+        // 手动计算器里用户选中的那一招就是本次要算的招式，
+        // 必须写进攻击方 build 的 moves，否则引擎匹配不到 moveId，会判成 NO_ATTACKER_MOVES。
+        val moves = move?.let { listOf(it) } ?: ownSelection.config.moves
+        return ownSelection.config.copy(statPoints = points, actualStats = stats, statAlignment = null, moves = moves)
     }
 
     fun opponentConfig(): PokemonConfig {
@@ -1456,6 +599,51 @@ private fun ManualCalculatorScreen(
     LaunchedEffect(signature) {
         kotlinx.coroutines.delay(300)
         recalculate()
+    }
+
+    val currentPicker = pickerRequest
+    if (currentPicker != null) {
+        val entries: List<PickerEntry> = when (currentPicker.kind) {
+            PickerKind.SPECIES -> repository.speciesCatalog.map { it.asPickerEntry() }
+            PickerKind.ITEM -> repository.itemCatalog.map { it.asPickerEntry() }
+            PickerKind.MOVE -> learnableMoves.map { move ->
+                PickerEntry(
+                    id = move.entity.showdownId,
+                    label = "[${repository.moveTypeLabel(move)}] ${move.entity.displayName}",
+                    searchKeys = listOf(move.entity.displayName, move.entity.showdownId, move.entity.canonicalId),
+                )
+            }
+        }
+        SelectionPage(
+            title = when (currentPicker.kind) {
+                PickerKind.SPECIES -> if (currentPicker.attacker) "选择攻击方宝可梦" else "选择防御方宝可梦"
+                PickerKind.ITEM -> "选择持有物"
+                PickerKind.MOVE -> "选择招式"
+            },
+            hint = "输入中文名或英文名，边打边筛",
+            entries = entries,
+            onDismiss = { pickerRequest = null },
+            onSelect = { id ->
+                when (currentPicker.kind) {
+                    PickerKind.SPECIES -> catalog.firstOrNull { it.showdownId == id }?.let { species ->
+                        val next = defaultState(species)
+                        if (currentPicker.attacker) ownSelection = next else opponentSelection = next
+                    }
+                    PickerKind.ITEM -> repository.itemCatalog.firstOrNull { it.showdownId == id }?.let { item ->
+                        val base = if (currentPicker.attacker) ownSelection else opponentSelection
+                        val next = base.copy(
+                            config = base.config.copy(item = item),
+                            sourceLabel = "手动配置",
+                            profileId = null,
+                        )
+                        if (currentPicker.attacker) ownSelection = next else opponentSelection = next
+                    }
+                    PickerKind.MOVE -> selectedMove = id
+                }
+                pickerRequest = null
+            },
+        )
+        return
     }
 
     Column(
@@ -1527,6 +715,7 @@ private fun ManualCalculatorScreen(
             lightScreen = false,
             onLightScreen = {},
             onStateChange = { ownSelection = it },
+            onRequestPicker = { pickerRequest = PickerRequest(it, true) },
         )
 
         CalculatorSideCard(
@@ -1557,6 +746,7 @@ private fun ManualCalculatorScreen(
             lightScreen = opponentLightScreen,
             onLightScreen = { opponentLightScreen = it },
             onStateChange = { opponentSelection = it },
+            onRequestPicker = { pickerRequest = PickerRequest(it, false) },
         )
 
         if (errorMessage.isNotBlank()) {
@@ -1599,86 +789,70 @@ private fun CalculatorSideCard(
     lightScreen: Boolean,
     onLightScreen: (Boolean) -> Unit,
     onStateChange: (CalculatorPokemonState) -> Unit,
+    onRequestPicker: (PickerKind) -> Unit,
 ) {
-    var chooseSpecies by remember { mutableStateOf(false) }
-    var chooseItem by remember { mutableStateOf(false) }
-    var chooseMove by remember { mutableStateOf(false) }
     var screensExpanded by remember { mutableStateOf(false) }
     val config = state.config
-    val abilities = (listOfNotNull(config.ability) + repository.abilitiesFor(config.species))
+    val speciesAbilities = repository.abilitiesFor(config.species)
+    val abilities = (listOfNotNull(config.ability) + speciesAbilities)
         .distinctBy { it.showdownId.lowercase() }
     val selectedMoveName = learnableMoves.firstOrNull { it.entity.showdownId == selectedMove }?.entity?.displayName
-        ?: "搜索招式"
-
-    if (chooseSpecies) {
-        EntitySearchDialog(
-            title = "选择$title",
-            entities = repository.speciesCatalog,
-            onDismiss = { chooseSpecies = false },
-            onSelect = { species ->
-                val profile = repository.profilesFor(species).firstOrNull { it.profileId == "generated.default" }
-                    ?: repository.recommendedProfile(species)
-                onStateChange(CalculatorPokemonState(repository.configFor(species, profile), "图鉴默认（0 加点）", profile.profileId))
-                chooseSpecies = false
-            },
-        )
-    }
-    if (chooseItem) {
-        EntitySearchDialog(
-            title = "选择持有物",
-            entities = repository.itemCatalog,
-            onDismiss = { chooseItem = false },
-            onSelect = { item ->
-                onStateChange(state.copy(config = config.copy(item = item), sourceLabel = "手动配置", profileId = null))
-                chooseItem = false
-            },
-        )
-    }
-    if (chooseMove) {
-        MoveSearchDialog(
-            title = "选择招式",
-            moves = learnableMoves,
-            repository = repository,
-            onDismiss = { chooseMove = false },
-            onSelect = { move ->
-                onSelectMove(move.entity.showdownId)
-                chooseMove = false
-            },
-        )
-    }
+        ?: "未选择招式"
 
     fun updateConfig(next: PokemonConfig) {
         onStateChange(state.copy(config = next, sourceLabel = "手动配置", profileId = null))
     }
 
-    Card(Modifier.fillMaxWidth()) {
+    // 特性不再有「无」这个选项：默认落到这只宝可梦的第一个特性。
+    LaunchedEffect(config.species.showdownId, abilities.size) {
+        if (config.ability == null && abilities.isNotEmpty()) {
+            updateConfig(config.copy(ability = abilities.first()))
+        }
+    }
+
+    Card(
+        Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFFFFFFFF)),
+    ) {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
 
-            OutlinedButton(onClick = { chooseSpecies = true }, modifier = Modifier.fillMaxWidth()) {
+            OutlinedButton(onClick = { onRequestPicker(PickerKind.SPECIES) }, modifier = Modifier.fillMaxWidth()) {
                 Text(config.species.displayName, modifier = Modifier.weight(1f))
-                Text("更换")
             }
 
             if (isAttacker) {
-                OutlinedButton(onClick = { chooseMove = true }, modifier = Modifier.fillMaxWidth()) {
+                OutlinedButton(onClick = { onRequestPicker(PickerKind.MOVE) }, modifier = Modifier.fillMaxWidth()) {
                     Text("招式：$selectedMoveName", modifier = Modifier.weight(1f))
-                    Text("搜索")
                 }
             }
 
-            Text("性格修正（$statLabel）", style = MaterialTheme.typography.labelMedium)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            // 左侧「性格 ×0.9 ×1.0 ×1.1」整体左对齐，右侧「能力等级 − 0 +」整体右对齐
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    "性格",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
                 listOf(0.9 to "×0.9", 1.0 to "×1.0", 1.1 to "×1.1").forEach { (value, label) ->
-                    FilterChip(
+                    CompactChoiceChip(
+                        label = label,
                         selected = kotlin.math.abs(nature - value) < 0.001,
                         onClick = { onNatureChange(value) },
-                        label = { Text(label) },
                     )
                 }
+                Spacer(Modifier.weight(1f))
+                Text(
+                    "能力等级",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                CompactStepper(stage, -6, 6, onStageChange)
             }
-
-            StepperField("能力等级（$statLabel）", stage, -6, 6, Modifier.fillMaxWidth(), onStageChange)
 
             if (showHpPoints) {
                 StepperField("生命点数", hpPoints, 0, 32, Modifier.fillMaxWidth(), onHpPoints)
@@ -1690,20 +864,44 @@ private fun CalculatorSideCard(
                 StepperField("速度点数（电球用）", speedPoints, 0, 32, Modifier.fillMaxWidth(), onSpeedPoints)
             }
 
-            SimplePicker<EntityValue?>(
-                label = "特性",
-                options = listOf(null) + abilities,
-                selected = config.ability,
-                display = { it?.displayName ?: "无" },
-                onSelect = { ability -> updateConfig(config.copy(ability = ability)) },
-            )
-
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                OutlinedButton(onClick = { chooseItem = true }, modifier = Modifier.weight(1f)) {
-                    Text("持有物：${config.item?.displayName ?: "无"}")
-                }
-                if (config.item != null) {
-                    TextButton(onClick = { updateConfig(config.copy(item = null)) }) { Text("清除") }
+            // 特性与持有物并列一行：特性在左、持有物在右
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                SimplePicker<EntityValue?>(
+                    label = "特性",
+                    options = abilities,
+                    selected = config.ability,
+                    display = { it?.displayName ?: "—" },
+                    onSelect = { ability -> updateConfig(config.copy(ability = ability)) },
+                    modifier = Modifier.weight(1f),
+                )
+                Column(
+                    Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    Text("持有物", style = MaterialTheme.typography.labelMedium)
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        OutlinedButton(
+                            onClick = { onRequestPicker(PickerKind.ITEM) },
+                            modifier = Modifier.weight(1f),
+                        ) {
+                            Text(
+                                config.item?.displayName ?: "无",
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f),
+                            )
+                            Text("▼")
+                        }
+                        if (config.item != null) {
+                            CompactTextButton("清除") { updateConfig(config.copy(item = null)) }
+                        }
+                    }
                 }
             }
 
@@ -1752,20 +950,208 @@ private fun StepperField(
     modifier: Modifier = Modifier,
     onChange: (Int) -> Unit,
 ) {
+    var editing by remember { mutableStateOf(false) }
+    var draft by remember { mutableStateOf(value.toString()) }
+    val focusRequester = remember { FocusRequester() }
+    val keyboard = LocalSoftwareKeyboardController.current
+
+    fun commitDraft() {
+        val parsed = draft.toIntOrNull() ?: value
+        onChange(parsed.coerceIn(min, max))
+        editing = false
+        keyboard?.hide()
+    }
+
+    LaunchedEffect(editing) {
+        if (editing) focusRequester.requestFocus()
+    }
+
     Row(
-        modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(2.dp),
+        modifier.fillMaxWidth().heightIn(min = 40.dp),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(label, modifier = Modifier.weight(1f), style = MaterialTheme.typography.labelMedium)
-        TextButton(onClick = { onChange((value - 1).coerceAtLeast(min)) }) { Text("−") }
+        // 两端提供「最小 / 最大」一键落位，中间数字可直接点进去输入
+        CompactTextButton("最小", enabled = value > min) { onChange(min) }
+        CompactRoundButton("−", enabled = value > min) { onChange((value - 1).coerceAtLeast(min)) }
+        NumericValueBox(
+            value = value,
+            editing = editing,
+            draft = draft,
+            onDraftChange = { draft = it },
+            onBeginEdit = {
+                draft = value.toString()
+                editing = true
+            },
+            onCommit = { if (editing) commitDraft() },
+            focusRequester = focusRequester,
+        )
+        CompactRoundButton("+", enabled = value < max) { onChange((value + 1).coerceAtMost(max)) }
+        CompactTextButton("最大", enabled = value < max) { onChange(max) }
+    }
+}
+
+@Composable
+private fun NumericValueBox(
+    value: Int,
+    editing: Boolean,
+    draft: String,
+    onDraftChange: (String) -> Unit,
+    onBeginEdit: () -> Unit,
+    onCommit: () -> Unit,
+    focusRequester: FocusRequester,
+) {
+    var hadFocus by remember { mutableStateOf(false) }
+    Box(
+        Modifier
+            .width(52.dp)
+            .height(32.dp)
+            .background(
+                if (editing) Color(0xFFFFFFFF) else Color(0xFFF1F2F6),
+                RoundedCornerShape(50),
+            )
+            .then(
+                if (editing) {
+                    Modifier.border(1.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(50))
+                } else {
+                    Modifier
+                },
+            )
+            .clickable(enabled = !editing, onClick = onBeginEdit),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (editing) {
+            BasicTextField(
+                value = draft,
+                onValueChange = { input -> onDraftChange(input.filter { it.isDigit() }.take(3)) },
+                singleLine = true,
+                textStyle = MaterialTheme.typography.bodyLarge.copy(
+                    fontWeight = FontWeight.Bold,
+                    textAlign = TextAlign.Center,
+                    color = MaterialTheme.colorScheme.onSurface,
+                ),
+                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Number,
+                    imeAction = ImeAction.Done,
+                ),
+                keyboardActions = KeyboardActions(onDone = { onCommit() }),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .focusRequester(focusRequester)
+                    .onFocusChanged { state ->
+                        if (state.isFocused) {
+                            hadFocus = true
+                        } else if (hadFocus) {
+                            hadFocus = false
+                            onCommit()
+                        }
+                    },
+            )
+        } else {
+            Text(
+                if (value > 0) "+$value" else value.toString(),
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.Bold,
+            )
+        }
+    }
+}
+
+@Composable
+private fun CompactStepper(
+    value: Int,
+    min: Int,
+    max: Int,
+    onChange: (Int) -> Unit,
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        CompactRoundButton("−", enabled = value > min) { onChange((value - 1).coerceAtLeast(min)) }
         Text(
             if (value > 0) "+$value" else value.toString(),
-            modifier = Modifier.widthIn(min = 28.dp),
+            modifier = Modifier.widthIn(min = 30.dp),
+            style = MaterialTheme.typography.bodyLarge,
             fontWeight = FontWeight.Bold,
             textAlign = TextAlign.Center,
         )
-        TextButton(onClick = { onChange((value + 1).coerceAtMost(max)) }) { Text("+") }
+        CompactRoundButton("+", enabled = value < max) { onChange((value + 1).coerceAtMost(max)) }
+    }
+}
+
+@Composable
+private fun CompactRoundButton(
+    text: String,
+    enabled: Boolean = true,
+    onClick: () -> Unit,
+) {
+    Box(
+        Modifier
+            .size(32.dp)
+            .background(
+                if (enabled) Color(0xFFF1F2F6) else Color(0xFFF7F8FA),
+                RoundedCornerShape(50),
+            )
+            .clickable(enabled = enabled, onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text,
+            style = MaterialTheme.typography.bodyMedium,
+            color = if (enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
+        )
+    }
+}
+
+@Composable
+private fun CompactTextButton(
+    text: String,
+    enabled: Boolean = true,
+    onClick: () -> Unit,
+) {
+    Box(
+        Modifier
+            .background(
+                if (enabled) Color(0xFFF1F2F6) else Color(0xFFF7F8FA),
+                RoundedCornerShape(50),
+            )
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = 9.dp, vertical = 6.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text,
+            style = MaterialTheme.typography.labelMedium,
+            color = if (enabled) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.outline,
+        )
+    }
+}
+
+@Composable
+private fun CompactChoiceChip(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    Box(
+        Modifier
+            .background(
+                if (selected) MaterialTheme.colorScheme.secondaryContainer else Color(0xFFF1F2F6),
+                RoundedCornerShape(50),
+            )
+            .clickable(onClick = onClick)
+            .padding(horizontal = 10.dp, vertical = 6.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            label,
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+            color = if (selected) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 
@@ -1874,12 +1260,101 @@ private fun PokemonConfigEditor(
             }
         }
         state.moveSlotReminder()?.let { reminder ->
-            Text(reminder, color = Color(0xFFFFB74D), style = MaterialTheme.typography.bodySmall)
+            Text(reminder, color = Color(0xFFB26A00), style = MaterialTheme.typography.bodySmall)
         }
         Text("实际能力值", fontWeight = FontWeight.SemiBold)
         StatEditor(state.actualStats) { onChange(state.copy(actualStats = it)) }
         Text("能力加点（可留空）", fontWeight = FontWeight.SemiBold)
         StatEditor(state.statPoints) { onChange(state.copy(statPoints = it)) }
+    }
+}
+
+private enum class PickerKind { SPECIES, ITEM, MOVE }
+
+private data class PickerRequest(val kind: PickerKind, val attacker: Boolean)
+
+private data class PickerEntry(
+    val id: String,
+    val label: String,
+    val searchKeys: List<String>,
+) {
+    fun matchesQuery(rawQuery: String): Boolean {
+        val query = normalizeSearchText(rawQuery)
+        if (query.isBlank()) return true
+        return searchKeys.any { normalizeSearchText(it).contains(query) }
+    }
+}
+
+private fun EntityValue.asPickerEntry(): PickerEntry = PickerEntry(
+    id = showdownId,
+    label = displayName,
+    searchKeys = listOf(displayName, showdownId, canonicalId),
+)
+
+@Composable
+private fun SelectionPage(
+    title: String,
+    hint: String,
+    entries: List<PickerEntry>,
+    onDismiss: () -> Unit,
+    onSelect: (String) -> Unit,
+) {
+    var query by remember { mutableStateOf("") }
+    val filtered = remember(entries, query) { entries.filter { it.matchesQuery(query) } }
+    val focusRequester = remember { FocusRequester() }
+    val keyboard = LocalSoftwareKeyboardController.current
+    LaunchedEffect(Unit) {
+        kotlinx.coroutines.delay(80)
+        runCatching { focusRequester.requestFocus() }
+        keyboard?.show()
+    }
+    Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+        Column(
+            Modifier.fillMaxSize().padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    title,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.weight(1f),
+                )
+                TextButton(onClick = onDismiss) { Text("取消") }
+            }
+            OutlinedTextField(
+                value = query,
+                onValueChange = { query = it },
+                placeholder = { Text(hint) },
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                keyboardActions = dismissingKeyboardActions(),
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth().focusRequester(focusRequester),
+            )
+            Text(
+                if (query.isBlank()) "共 ${entries.size} 项" else "匹配 ${filtered.size} 项",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            if (filtered.isEmpty()) {
+                Text("没有找到匹配项", color = Color(0xFFB26A00))
+            }
+            LazyColumn(
+                Modifier.fillMaxWidth().weight(1f),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                itemsIndexed(filtered.take(300)) { _, entry ->
+                    TextButton(onClick = { onSelect(entry.id) }, modifier = Modifier.fillMaxWidth()) {
+                        Text(
+                            entry.label,
+                            modifier = Modifier.weight(1f),
+                            textAlign = TextAlign.Start,
+                        )
+                    }
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                }
+            }
+        }
     }
 }
 
@@ -1891,13 +1366,15 @@ private fun MoveSearchDialog(
     onDismiss: () -> Unit,
     onSelect: (MoveValue) -> Unit,
 ) {
-    var query by rememberSaveable(title) { mutableStateOf("") }
-    var sortModeName by rememberSaveable("$title-sort") { mutableStateOf(MoveSortMode.PINYIN.name) }
-    val sortMode = MoveSortMode.valueOf(sortModeName)
-    val filtered = remember(moves, query, sortMode) {
-        val matches = moves.filter { it.matchesSearch(query) }
-        sortMoves(matches, sortMode, repository::moveTypeFor)
+    var query by remember { mutableStateOf("") }
+    val focusRequester = remember { FocusRequester() }
+    val keyboard = LocalSoftwareKeyboardController.current
+    LaunchedEffect(Unit) {
+        kotlinx.coroutines.delay(120)
+        runCatching { focusRequester.requestFocus() }
+        keyboard?.show()
     }
+    val filtered = remember(moves, query) { moves.filter { it.matchesSearch(query) } }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
@@ -1911,9 +1388,8 @@ private fun MoveSearchDialog(
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                     keyboardActions = dismissingKeyboardActions(),
                     singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.fillMaxWidth().focusRequester(focusRequester),
                 )
-                MoveSortSelector(sortMode) { sortModeName = it.name }
                 LazyColumn(
                     modifier = Modifier.fillMaxWidth().heightIn(max = 420.dp),
                     verticalArrangement = Arrangement.spacedBy(2.dp),
@@ -1924,28 +1400,15 @@ private fun MoveSearchDialog(
                         }
                     }
                 }
-                if (filtered.isEmpty()) Text("没有找到匹配项", color = Color(0xFFFFB74D))
-                else if (filtered.size > 100) Text("结果较多，请继续输入关键词。", style = MaterialTheme.typography.bodySmall)
+                if (filtered.isEmpty()) {
+                    Text("没有找到匹配项", color = Color(0xFFB26A00))
+                } else if (filtered.size > 100) {
+                    Text("结果较多，请继续输入关键词。", style = MaterialTheme.typography.bodySmall)
+                }
             }
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("取消") } },
     )
-}
-
-@Composable
-private fun MoveSortSelector(selected: MoveSortMode, onSelect: (MoveSortMode) -> Unit) {
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text("排序方式", style = MaterialTheme.typography.labelMedium)
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            MoveSortMode.entries.forEach { mode ->
-                FilterChip(
-                    selected = selected == mode,
-                    onClick = { onSelect(mode) },
-                    label = { Text(mode.label) },
-                )
-            }
-        }
-    }
 }
 
 @Composable
@@ -1955,10 +1418,15 @@ private fun EntitySearchDialog(
     onDismiss: () -> Unit,
     onSelect: (EntityValue) -> Unit,
 ) {
-    var query by rememberSaveable(title) { mutableStateOf("") }
-    val filtered = remember(entities, query) {
-        entities.filter { it.matchesSearch(query) }
+    var query by remember { mutableStateOf("") }
+    val focusRequester = remember { FocusRequester() }
+    val keyboard = LocalSoftwareKeyboardController.current
+    LaunchedEffect(Unit) {
+        kotlinx.coroutines.delay(120)
+        runCatching { focusRequester.requestFocus() }
+        keyboard?.show()
     }
+    val filtered = remember(entities, query) { entities.filter { it.matchesSearch(query) } }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
@@ -1972,7 +1440,7 @@ private fun EntitySearchDialog(
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                     keyboardActions = dismissingKeyboardActions(),
                     singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.fillMaxWidth().focusRequester(focusRequester),
                 )
                 LazyColumn(
                     modifier = Modifier.fillMaxWidth().heightIn(max = 420.dp),
@@ -1984,8 +1452,11 @@ private fun EntitySearchDialog(
                         }
                     }
                 }
-                if (filtered.isEmpty()) Text("没有找到匹配项", color = Color(0xFFFFB74D))
-                else if (filtered.size > 100) Text("结果较多，请继续输入关键词。", style = MaterialTheme.typography.bodySmall)
+                if (filtered.isEmpty()) {
+                    Text("没有找到匹配项", color = Color(0xFFB26A00))
+                } else if (filtered.size > 100) {
+                    Text("结果较多，请继续输入关键词。", style = MaterialTheme.typography.bodySmall)
+                }
             }
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("取消") } },
@@ -2065,10 +1536,10 @@ private fun CalculationResultCard(result: CalculationUiResult) {
                 move.assumptions.forEach { Text("• $it", style = MaterialTheme.typography.bodySmall) }
             }
         }
-        if (result.moves.isEmpty()) Text("没有可计算的招式，请重新选择。", color = Color(0xFFFFB74D))
+        if (result.moves.isEmpty()) Text("没有可计算的招式，请重新选择。", color = Color(0xFFB26A00))
         if (result.warnings.isNotEmpty()) {
             HorizontalDivider()
-            Text("计算提示", fontWeight = FontWeight.Bold, color = Color(0xFFFFB74D))
+            Text("计算提示", fontWeight = FontWeight.Bold, color = Color(0xFFB26A00))
             result.warnings.forEach { Text("• $it", style = MaterialTheme.typography.bodySmall) }
         }
     }
@@ -2153,14 +1624,15 @@ private fun <T> SimplePicker(
     options: List<T>,
     selected: T,
     display: (T) -> String = { it.toString() },
+    modifier: Modifier = Modifier,
     onSelect: (T) -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text(label, style = MaterialTheme.typography.labelMedium)
         Box(Modifier.fillMaxWidth()) {
             OutlinedButton(onClick = { expanded = true }, modifier = Modifier.fillMaxWidth()) {
-                Text(display(selected), modifier = Modifier.weight(1f))
+                Text(display(selected), modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text("▼")
             }
             DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
@@ -2188,7 +1660,10 @@ private fun CheckRow(label: String, checked: Boolean, onCheckedChange: (Boolean)
 
 @Composable
 private fun SectionCard(title: String, content: @Composable ColumnScope.() -> Unit) {
-    Card(Modifier.fillMaxWidth()) {
+    Card(
+        Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFFFFFFFF)),
+    ) {
         Column(
             Modifier.padding(14.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -2203,7 +1678,7 @@ private fun SectionCard(title: String, content: @Composable ColumnScope.() -> Un
 private fun StatusCard(message: String, ready: Boolean) {
     Card(
         colors = CardDefaults.cardColors(
-            containerColor = if (ready) Color(0xFF153C36) else Color(0xFF3B3420),
+            containerColor = if (ready) Color(0xFFDCF2EC) else Color(0xFFFFF1D9),
         ),
     ) {
         Text(message, Modifier.padding(horizontal = 12.dp, vertical = 8.dp))
@@ -2211,7 +1686,7 @@ private fun StatusCard(message: String, ready: Boolean) {
 }
 
 @Composable
-private fun SettingsScreen(runtime: DamageEngineRuntime, teams: List<SavedTeam>) {
+private fun SettingsScreen(runtime: DamageEngineRuntime) {
     val context = LocalContext.current
     val version = remember { installedVersion(context) }
     val releaseVariant = remember { AppReleaseVariant.fromBuildValue(BuildConfig.RELEASE_VARIANT) }
@@ -2371,7 +1846,6 @@ private fun SettingsScreen(runtime: DamageEngineRuntime, teams: List<SavedTeam>)
         }
         SectionCard("本地状态") {
             StatusCard(runtime.status, runtime.status.contains("已就绪"))
-            Text("队伍资产：${teams.size} 份")
             Text("引擎信息：${runtime.engineInfo.ifBlank { "尚未读取" }}", style = MaterialTheme.typography.bodySmall)
         }
         SectionCard("数据备份与恢复") {
@@ -2385,7 +1859,7 @@ private fun SettingsScreen(runtime: DamageEngineRuntime, teams: List<SavedTeam>)
                 modifier = Modifier.fillMaxWidth(),
             ) { Text("导入我的数据") }
             backupMessage?.let {
-                Text(it, color = if (it.startsWith("恢复失败") || it.startsWith("导出失败")) MaterialTheme.colorScheme.error else Color(0xFF80CBC4))
+                Text(it, color = if (it.startsWith("恢复失败") || it.startsWith("导出失败")) MaterialTheme.colorScheme.error else Color(0xFF00796B))
             }
         }
         SectionCard("宝可梦配置分享") {
@@ -2410,14 +1884,14 @@ private fun SettingsScreen(runtime: DamageEngineRuntime, teams: List<SavedTeam>)
                     color = if (it.startsWith("配置导出失败") || it.startsWith("配置导入失败")) {
                         MaterialTheme.colorScheme.error
                     } else {
-                        Color(0xFF80CBC4)
+                        Color(0xFF00796B)
                     },
                 )
             }
         }
         Text(
             "App 自身只在手动检查更新时访问 GitHub，不主动上传截图、队伍或计算输入；若系统备份已开启，Android 可加密同步所选 JSON 数据。APK 下载由系统浏览器处理。",
-            color = Color(0xFF80CBC4),
+            color = Color(0xFF00796B),
             style = MaterialTheme.typography.bodySmall,
         )
     }
@@ -2432,7 +1906,7 @@ private fun UpdateResultContent(
     HorizontalDivider()
     when (result) {
         is UpdateCheckResult.Available -> {
-            Text("发现新版本 ${result.release.tagName}", fontWeight = FontWeight.Bold, color = Color(0xFFFFD54F))
+            Text("发现新版本 ${result.release.tagName}", fontWeight = FontWeight.Bold, color = Color(0xFF1A73E8))
             Text(result.release.title)
             releaseNotesPreview(result.release.notes)?.let { notes ->
                 Text(notes, style = MaterialTheme.typography.bodySmall)
@@ -2443,14 +1917,14 @@ private fun UpdateResultContent(
             }
         }
         is UpdateCheckResult.Current -> {
-            Text("当前已经是此频道的最新版本（${result.release.tagName}）。", color = Color(0xFF80CBC4))
+            Text("当前已经是此频道的最新版本（${result.release.tagName}）。", color = Color(0xFF00796B))
             Text("如需切换版本，可在下方重新选择安装包。", style = MaterialTheme.typography.bodySmall)
             ReleaseDownloadButtons(result.release, preferredVariant, openUrl)
             OutlinedButton(onClick = { openUrl(result.release.pageUrl) }, modifier = Modifier.fillMaxWidth()) {
                 Text("查看版本说明")
             }
         }
-        is UpdateCheckResult.NoRelease -> Text(result.message, color = Color(0xFFFFB74D))
+        is UpdateCheckResult.NoRelease -> Text(result.message, color = Color(0xFFB26A00))
         is UpdateCheckResult.Failure -> Text(result.message, color = MaterialTheme.colorScheme.error)
     }
 }
@@ -2511,6 +1985,34 @@ private fun PlaceholderScreen(title: String, message: String) {
         Spacer(Modifier.height(12.dp))
         Text(message)
     }
+}
+
+/** 延迟生效的伤害招（本回合不结算），不设为默认选中招式（已归一化 id）。 */
+private val DELAYED_DAMAGE_MOVES = setOf("futuresight", "doomdesire")
+
+/**
+ * 选招式列表的排序规则：
+ * 1) 本系招式（属性与宝可梦自身属性相同）排在最前，并按其属性在宝可梦属性中的顺序排列；
+ * 2) 其余招式按属性分组，属性顺序按类型名固定排序，保证同属性相邻；
+ * 3) 同一属性内按招式威力从高到低，威力相同再按名称。
+ */
+private fun sortMovesForPicker(
+    moves: List<MoveValue>,
+    speciesTypes: List<String>,
+    typeOf: (MoveValue) -> String?,
+): List<MoveValue> {
+    val normalizedSpeciesTypes = speciesTypes.map { normalizeShowdownId(it) }
+    fun typeKey(move: MoveValue) = normalizeShowdownId(typeOf(move).orEmpty())
+    fun stabRank(move: MoveValue): Int {
+        val index = normalizedSpeciesTypes.indexOf(typeKey(move))
+        return if (index >= 0) index else normalizedSpeciesTypes.size.coerceAtLeast(1)
+    }
+    return moves.sortedWith(
+        compareBy<MoveValue> { stabRank(it) }
+            .thenBy { typeKey(it) }
+            .thenByDescending { it.basePower ?: -1 }
+            .thenBy { it.entity.displayName },
+    )
 }
 
 private fun weatherLabel(value: String) = when (value) {
@@ -2629,7 +2131,10 @@ private fun parseTierCalculation(raw: String): TierCalculationUiResult {
 
 @Composable
 private fun TierCalculationCard(result: TierCalculationUiResult) {
-    Card(Modifier.fillMaxWidth()) {
+    Card(
+        Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFFFFFFFF)),
+    ) {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("三档伤害估算", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             Text(
@@ -2652,7 +2157,7 @@ private fun TierCalculationCard(result: TierCalculationUiResult) {
                             Column(
                                 Modifier
                                     .weight(1f)
-                                    .background(Color(0xFF1E2736), RoundedCornerShape(8.dp))
+                                    .background(Color(0xFFF1F2F6), RoundedCornerShape(8.dp))
                                     .padding(vertical = 8.dp, horizontal = 4.dp),
                                 horizontalAlignment = Alignment.CenterHorizontally,
                             ) {

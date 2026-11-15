@@ -121,9 +121,9 @@ internal fun nextBattleDirectHudMode(mode: BattleDirectHudMode): BattleDirectHud
 
 internal fun battleDirectHudToggleLabel(sessionReady: Boolean, mode: BattleDirectHudMode): String = when {
     !sessionReady -> "等待阵容"
-    mode == BattleDirectHudMode.TYPE_MATCHUP -> "切换计算"
-    mode == BattleDirectHudMode.CALCULATION -> "隐藏 HUD"
-    else -> "显示 HUD"
+    mode == BattleDirectHudMode.TYPE_MATCHUP -> "计算伤害"
+    mode == BattleDirectHudMode.CALCULATION -> "收起"
+    else -> "计算伤害"
 }
 
 internal data class BattleDirectHudToggleColors(
@@ -1006,6 +1006,17 @@ class OpponentPresetRepository(private val context: Context) {
         val maximum = ((baseSpeed + 52) * 11) / 10
         return minimum..maximum
     }
+
+    /** 基础速度（种族速度），用于 HUD 速度行按投入点数换算。 */
+    fun baseSpeedFor(species: EntityValue): Int? =
+        formBySpecies[normalizeShowdownId(species.showdownId)]?.baseStats?.spe?.toIntOrNull()
+
+    /** 速度能力值：floor(性格修正 × (种族速度 + 投入点数 + 20))。 */
+    fun speedStatFor(species: EntityValue, points: Int, natureBoost: Boolean): Int? =
+        baseSpeedFor(species)?.let { base ->
+            val multiplier = if (natureBoost) 1.1 else 1.0
+            kotlin.math.floor(multiplier * (base + points.coerceIn(0, 32) + 20)).toInt()
+        }
 
     fun recommendedProfile(species: EntityValue): OpponentPreset {
         val profiles = profilesFor(species)

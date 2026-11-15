@@ -23,6 +23,7 @@ import java.util.concurrent.TimeUnit
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.roundToInt
 
 private const val SLOT_COUNT = 6
 internal const val PENDING_OWN_TEAM_FILE = "pending-own-team.json"
@@ -137,10 +138,21 @@ internal fun classifyOwnTeamPage(
     statEvidence: Int,
     moveItemEvidence: Int,
     expectedType: OwnTeamPageType? = null,
-): OwnTeamPageType = expectedType ?: when {
-    moveItemEvidence >= SLOT_COUNT -> OwnTeamPageType.MOVE_ITEM
-    statEvidence >= SLOT_COUNT -> OwnTeamPageType.STATS
-    else -> OwnTeamPageType.MOVE_ITEM
+): OwnTeamPageType {
+    // 先按画面证据判页，再看预期页。之前的实现把 expectedType 放在最前面，
+    // 第一次录入时预期页固定是“招式与道具”，于是停在“能力值”页也会被判成招式页，
+    // 招式被当成本页内容解析，后面的逐招计算自然只剩一两条。
+    val decided = when {
+        moveItemEvidence >= SLOT_COUNT && statEvidence >= SLOT_COUNT ->
+            if (statEvidence >= moveItemEvidence) OwnTeamPageType.STATS else OwnTeamPageType.MOVE_ITEM
+        moveItemEvidence >= SLOT_COUNT -> OwnTeamPageType.MOVE_ITEM
+        statEvidence >= SLOT_COUNT -> OwnTeamPageType.STATS
+        else -> null
+    }
+    return decided ?: expectedType ?: when {
+        statEvidence > moveItemEvidence -> OwnTeamPageType.STATS
+        else -> OwnTeamPageType.MOVE_ITEM
+    }
 }
 
 internal fun blankOwnTeamPage(
@@ -490,6 +502,13 @@ class OwnTeamOcrEngine(context: Context, private val paddle: PaddleOcrEngine? = 
         expectedType: OwnTeamPageType?,
     ): RecognizedOwnTeamPage {
         val cards = TeamCardDetector.detect(bitmap)
+        // 队伍页现在走 PaddleOCR 优先：它对中文小字、带描边的游戏字体比 ML Kit 稳。
+        val paddleCards = runCatching { paddleCardLines(bitmap, cards) }
+            .onFailure { android.util.Log.e("OwnTeamOcr", "Paddle team-page recognition failed", it) }
+            .getOrNull()
+        if (paddleCards != null && paddleCards.count { it.lines.isNotEmpty() } >= 2) {
+            return buildRecognizedPage(paddleCards, cards, bitmap, expectedType)
+        }
         val cardResults = cards.map { card ->
             val crop = Bitmap.createBitmap(bitmap, card.left, card.top, card.width(), card.height())
             try {
@@ -513,7 +532,54 @@ class OwnTeamOcrEngine(context: Context, private val paddle: PaddleOcrEngine? = 
                 crop.recycle()
             }
         }
+        return buildRecognizedPage(cardResults, cards, bitmap, expectedType)
+    }
 
+    /** 用 PaddleOCR 的整屏行，按队伍卡片切成卡片内的行（坐标改回卡片局部坐标）。 */
+    private fun paddleCardLines(bitmap: Bitmap, cards: List<Rect>): List<OcrCard>? {
+        val engine = paddle ?: return null
+        val lines = engine.recognize(bitmap)
+        if (lines.isEmpty()) return null
+        return cards.map { card ->
+            val cardLines = lines.mapNotNull { line ->
+                val cx = (line.left + line.right) / 2
+                val cy = (line.top + line.bottom) / 2
+                if (cx < card.left || cx > card.right || cy < card.top || cy > card.bottom) {
+                    return@mapNotNull null
+                }
+                val rect = Rect(
+                    (line.left - card.left).coerceIn(0, card.width()),
+                    (line.top - card.top).coerceIn(0, card.height()),
+                    (line.right - card.left).coerceIn(0, card.width()),
+                    (line.bottom - card.top).coerceIn(0, card.height()),
+                )
+                if (rect.width() <= 0 || rect.height() <= 0) return@mapNotNull null
+                val text = normalizeText(line.text)
+                if (text.isBlank()) return@mapNotNull null
+                OcrLine(text, rect, splitNumberTokens(text, rect))
+            }
+            OcrCard(card.width(), card.height(), cardLines)
+        }
+    }
+
+    /** Paddle 只给整行文本，这里按数字位置估出“数字在行内的列坐标”，供能力值取值用。 */
+    private fun splitNumberTokens(text: String, rect: Rect): List<Token> {
+        val matches = Regex("[+-]?\\d+").findAll(text).toList()
+        if (matches.isEmpty() || rect.width() <= 0) return emptyList()
+        val length = text.length.coerceAtLeast(1).toFloat()
+        return matches.map { match ->
+            val start = rect.left + (rect.width() * match.range.first / length).roundToInt()
+            val end = rect.left + (rect.width() * (match.range.last + 1) / length).roundToInt()
+            Token(match.value, Rect(start, rect.top, end.coerceAtLeast(start + 1), rect.bottom))
+        }
+    }
+
+    private fun buildRecognizedPage(
+        cardResults: List<OcrCard>,
+        cards: List<Rect>,
+        bitmap: Bitmap,
+        expectedType: OwnTeamPageType?,
+    ): RecognizedOwnTeamPage {
         val statEvidence = cardResults.sumOf { card ->
             STAT_IDS.count { stat -> pickNumber(card, STAT_CELLS.getValue(stat), stat) != null }
         }
@@ -1138,14 +1204,14 @@ class OwnTeamImportRepository(private val context: Context) {
         val stats = statsPage
         when (nextOwnTeamImportStep(move, stats)) {
             OwnTeamImportNextStep.CAPTURE_MOVE_ITEM -> return ImportSaveResult(
-                "能力值页面已识别，可用它直接开始计算；需要更精确时再识别“招式与道具”页补全招式与特性",
+                "已记录「能力值」页；可继续识别同一支队伍的「招式与道具」页补全招式与特性，也可以直接按画面计算",
                 nextStep = OwnTeamImportNextStep.CAPTURE_MOVE_ITEM,
             )
             OwnTeamImportNextStep.CAPTURE_STATS -> return ImportSaveResult(
                 if (updated.restarted) {
-                    "检测到另一支队伍的“招式与道具”页面，已重新开始录入；可继续识别它的“能力值”页面，也可以直接开始计算"
+                    "检测到另一支队伍的「招式与道具」页，已重新开始录入；可继续识别它的「能力值」页，也可以直接按画面计算"
                 } else {
-                    "“招式与道具”页面已记录；可继续识别同一支队伍的“能力值”页面补全能力值，也可以直接开始计算"
+                    "已记录「招式与道具」页；可继续识别同一支队伍的「能力值」页补全能力值，也可以直接按画面计算"
                 },
                 nextStep = OwnTeamImportNextStep.CAPTURE_STATS,
             )

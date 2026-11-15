@@ -57,6 +57,7 @@ internal enum class BattleDirectHudElement {
     DAMAGE_2,
     DAMAGE_3,
     DAMAGE_4,
+    SPEED_TABLE,
     DETAIL,
 }
 
@@ -93,6 +94,8 @@ internal object BattleDirectHudLayout {
         BattleDirectHudElement.DAMAGE_2 to BattleDirectHudAnchor(0.462f, 0.595f, 0.212f),
         BattleDirectHudElement.DAMAGE_3 to BattleDirectHudAnchor(0.462f, 0.690f, 0.212f),
         BattleDirectHudElement.DAMAGE_4 to BattleDirectHudAnchor(0.462f, 0.785f, 0.212f),
+        // 速度数值框：贴在第一个伤害红框的左边，只有一行数值
+        BattleDirectHudElement.SPEED_TABLE to BattleDirectHudAnchor(0.244f, 0.500f, 0.212f),
         BattleDirectHudElement.DETAIL to BattleDirectHudAnchor(0.937f, 0.328f),
     )
 }
@@ -326,6 +329,12 @@ internal fun formatTierDamage(moveResult: JSONObject): String {
 private fun formatPercentCompact(value: Double): String =
     if (value >= 10.0) value.roundToInt().toString() else String.format(Locale.US, "%.1f", value)
 
+/** 速度行只显示四个数值：我方 / 对方 2 点 / 对方 32 点 / 对方 32 点+性格 1.1。 */
+internal fun formatSpeedTable(values: List<String>): String {
+    val cells = (0 until 4).map { values.getOrNull(it).orEmpty().ifBlank { "?" } }
+    return cells.joinToString("   ")
+}
+
 
 private fun normalizeDirectId(value: String): String = value.lowercase().replace(Regex("[^a-z0-9]+"), "")
 
@@ -368,6 +377,21 @@ internal fun battleDirectHudFormShowdownId(actionId: String): String? {
 
 internal fun battleDamageCacheKey(request: String): String = JSONObject(request).apply {
     remove("requestId")
+    // 每回合重建的临时队伍名/时间戳不能参与缓存键，否则同样的阵容组合永远不命中。
+    remove("teamId")
+    remove("teamName")
+    remove("capturedAt")
+    remove("sessionId")
+    optJSONObject("attacker")?.apply {
+        remove("teamId")
+        remove("teamName")
+        remove("profileName")
+    }
+    optJSONObject("defender")?.apply {
+        remove("teamId")
+        remove("teamName")
+        remove("profileName")
+    }
 }.toString()
 
 internal data class BattleDirectHudModel(
@@ -386,6 +410,8 @@ internal data class BattleDirectHudModel(
     val mode: BattleDirectHudMode = BattleDirectHudMode.TYPE_MATCHUP,
     val sessionReady: Boolean = true,
     val damageValues: List<String> = listOf("", "", "", ""),
+    /** 速度数值行：[我方速度, 对方2点, 对方32点, 对方32点+性格1.1]，空串表示未知。 */
+    val speedTableValues: List<String> = listOf("", "", "", ""),
     val ownTeamRecognition: OwnTeamRecognitionHudState = OwnTeamRecognitionHudState(),
     val typeMatchups: List<BattleTypeMatchup> = emptyList(),
     val ownChangeOptions: Map<Int, List<BattleDirectHudChangeOption>> = emptyMap(),
@@ -460,6 +486,7 @@ internal class BattleDirectOverlayUi(
     private var activeProfileKey = ""
     private var activePlacements: MutableMap<BattleDirectHudElement, BattleDirectHudPlacement> = mutableMapOf()
     private var damageLabels: List<TextView> = emptyList()
+    private var speedTableLabel: TextView? = null
     private val pickerViews = mutableMapOf<BattleDirectHudElement, PickerViews>()
     private var toggleButton: Button? = null
     private var speedContainer: LinearLayout? = null
@@ -467,7 +494,7 @@ internal class BattleDirectOverlayUi(
     private var assumptionControl: Button? = null
 
     val isVisible: Boolean get() = model != null
-    val isCalculationShown: Boolean get() = model?.mode == BattleDirectHudMode.CALCULATION
+    val isCalculationShown: Boolean get() = model != null
 
     fun show(next: BattleDirectHudModel) {
         val previous = model
@@ -484,141 +511,12 @@ internal class BattleDirectOverlayUi(
         removeWindows()
         val region = safeArea.currentRegion()
         prepareActiveLayout(region)
-        val toggleButton = compactButton(
-            battleDirectHudToggleLabel(next.sessionReady, next.mode),
-        ) {
-            val current = model ?: return@compactButton
-            if (current.sessionReady) onCycleMode()
-        }.apply {
-            isEnabled = next.sessionReady
-            alpha = if (isEnabled) 1f else 0.62f
-            applyToggleButtonStyle(this, isEnabled)
-        }
-        this.toggleButton = toggleButton
-        addWindow(
-            BattleDirectHudElement.TOGGLE,
-            toggleButton,
-            region,
-            desiredWidth = dp(84),
-            desiredHeight = dp(30),
-            interactive = true,
-        )
-        val formatButton = compactButton(
-            if (!next.sessionReady) "格式" else if (next.battleType == "DOUBLE") "双打" else "单打",
-            onToggleBattleType,
-        ).apply {
-            contentDescription = when {
-                !next.sessionReady -> "等待阵容后可切换单打或双打"
-                next.battleType == "DOUBLE" -> "当前双打，点击切换到单打"
-                else -> "当前单打，点击切换到双打"
-            }
-            isEnabled = next.sessionReady
-            alpha = if (isEnabled) 1f else 0.62f
-        }
-        addWindow(
-            BattleDirectHudElement.FORMAT,
-            formatButton,
-            region,
-            desiredWidth = dp(64),
-            desiredHeight = dp(30),
-            interactive = true,
-        )
-        val ownRecognitionButton = compactButton(
-            next.ownTeamRecognition.buttonLabel,
-            onRecognizeOwnTeam,
-        ).apply {
-            contentDescription = next.ownTeamRecognition.message ?: "识别我的队伍"
-            isEnabled = !next.ownTeamRecognition.inProgress
-            alpha = if (isEnabled) 1f else 0.72f
-        }
-        addWindow(
-            BattleDirectHudElement.OWN_RECOGNITION,
-            ownRecognitionButton,
-            region,
-            desiredWidth = dp(112),
-            desiredHeight = dp(30),
-            interactive = true,
-        )
-        next.ownTeamRecognition.message?.takeIf(String::isNotBlank)?.let { message ->
-            addWindow(
-                BattleDirectHudElement.OWN_RECOGNITION_STATUS,
-                recognitionStatusView(message),
-                region,
-                desiredWidth = dp(230),
-                desiredHeight = dp(30),
-                interactive = false,
-            )
-        }
+        // 入口只留悬浮球：HUD 上不再摆「计算伤害/收起」黄色按钮，
+        // 否则会和悬浮球的「按画面计算」「收起红框 HUD」重复，还容易点错路径。
+        this.toggleButton = null
         if (!next.sessionReady) {
-            addWindow(
-                BattleDirectHudElement.STATUS,
-                compactButton("点悬浮球→按画面计算", {}).apply {
-                    contentDescription = "点悬浮球的「按画面计算（选招页）」开始本局计算"
-                },
-                region,
-                desiredWidth = dp(180),
-                desiredHeight = dp(34),
-                interactive = false,
-            )
             restoreWindowLayerOrder()
             return
-        }
-        if (next.mode == BattleDirectHudMode.HIDDEN) {
-            addLayoutEditButton(region)
-            restoreWindowLayerOrder()
-            return
-        }
-        if (next.mode == BattleDirectHudMode.TYPE_MATCHUP) {
-            val matchupLayoutRegion = defaultLayoutRegion(BattleDirectHudElement.MATCHUP, region)
-            addWindow(
-                BattleDirectHudElement.MATCHUP,
-                typeMatchupView(next.typeMatchups),
-                region,
-                desiredWidth = dp(244),
-                desiredHeight = battleDirectTypeMatchupHeight(matchupLayoutRegion),
-                interactive = false,
-            )
-            addLayoutEditButton(region)
-            restoreWindowLayerOrder()
-            return
-        }
-        val speedZoneHeight = (region.height * (0.665f - 0.266f)).roundToInt() - dp(4)
-        val preferredSpeedHeight = if (next.battleType == "DOUBLE") dp(154) else dp(96)
-        val speedHeight = minOf(preferredSpeedHeight, speedZoneHeight).coerceAtLeast(minOf(dp(96), region.height))
-
-        addWindow(
-            BattleDirectHudElement.SPEED,
-            speedView(next),
-            region,
-            desiredWidth = dp(180),
-            desiredHeight = speedHeight,
-            interactive = false,
-        )
-        addWindow(
-            BattleDirectHudElement.STATUS,
-            statusButton(next.statusText),
-            region,
-            desiredWidth = dp(150),
-            desiredHeight = dp(34),
-            interactive = true,
-        )
-        addWindow(
-            BattleDirectHudElement.ASSUMPTION,
-            assumptionPicker(next),
-            region,
-            desiredWidth = dp(112),
-            desiredHeight = dp(32),
-            interactive = true,
-        )
-        battleDirectHudPickerSpecs(next.battleType).forEach { picker ->
-            addPicker(
-                picker.element,
-                picker.side,
-                picker.displayIndex,
-                picker.positionLabel,
-                next,
-                region,
-            )
         }
         damageLabels = emptyList()
         DAMAGE_ELEMENTS.forEachIndexed { index, element ->
@@ -633,17 +531,16 @@ internal class BattleDirectOverlayUi(
                 interactive = false,
             )
         }
+        val speedLabel = speedTableLabelView(next.speedTableValues)
+        speedTableLabel = speedLabel
         addWindow(
-            BattleDirectHudElement.DETAIL,
-            compactButton(BATTLE_DIRECT_HUD_FULL_PANEL_LABEL, onOpenDetails).apply {
-                contentDescription = "打开完整伤害计算面板"
-            },
+            BattleDirectHudElement.SPEED_TABLE,
+            speedLabel,
             region,
-            desiredWidth = dp(64),
-            desiredHeight = dp(34),
-            interactive = true,
+            desiredWidth = dp(190),
+            desiredHeight = dp(30),
+            interactive = false,
         )
-        addLayoutEditButton(region)
         restoreWindowLayerOrder()
     }
 
@@ -656,6 +553,7 @@ internal class BattleDirectOverlayUi(
         }
         if (!next.sessionReady || next.mode != BattleDirectHudMode.CALCULATION) return
         renderSpeedView(next)
+        updateSpeedTable(next.speedTableValues)
         updateStatusControl(next.statusText)
         updateAssumptionControl(next)
         pickerViews.values.forEach { updatePicker(it, next) }
@@ -719,6 +617,12 @@ internal class BattleDirectOverlayUi(
         model = model?.copy(damageValues = fixed)
     }
 
+    fun updateSpeedTable(values: List<String>) {
+        val fixed = (values + listOf("", "", "", "")).take(4)
+        speedTableLabel?.text = formatSpeedTable(fixed)
+        model = model?.copy(speedTableValues = fixed)
+    }
+
     fun updateOwnTeamRecognitionState(state: OwnTeamRecognitionHudState) {
         model?.let { show(it.copy(ownTeamRecognition = state)) }
     }
@@ -780,6 +684,7 @@ internal class BattleDirectOverlayUi(
         windows.values.forEach { record -> runCatching { windowManager.removeView(record.view) } }
         windows.clear()
         damageLabels = emptyList()
+        speedTableLabel = null
         pickerViews.clear()
         toggleButton = null
         speedContainer = null
@@ -1077,6 +982,18 @@ internal class BattleDirectOverlayUi(
         background = roundedBackground(SURFACE, BORDER, 5f)
     }
 
+    /** 速度数值行：我方速度靠左，后面依次是对手 2 点 / 32 点 / 32 点+性格 1.1。 */
+    private fun speedTableLabelView(values: List<String>): TextView = TextView(context).apply {
+        text = formatSpeedTable(values)
+        textSize = 8.5f
+        gravity = Gravity.START or Gravity.CENTER_VERTICAL
+        maxLines = 1
+        setTextColor(TEXT)
+        setTypeface(typeface, android.graphics.Typeface.BOLD)
+        setPadding(dp(6), dp(1), dp(6), dp(1))
+        background = roundedBackground(SURFACE, BORDER, 5f)
+    }
+
     private fun compactButton(text: String, action: () -> Unit): Button = Button(context).apply {
         this.text = text
         isAllCaps = false
@@ -1255,7 +1172,10 @@ internal class BattleDirectOverlayUi(
         element: BattleDirectHudElement,
         safeRegion: OverlayBounds,
     ): OverlayBounds {
-        if (element != BattleDirectHudElement.MATCHUP && element !in DAMAGE_ELEMENTS) return safeRegion
+        if (element != BattleDirectHudElement.MATCHUP &&
+            element != BattleDirectHudElement.SPEED_TABLE &&
+            element !in DAMAGE_ELEMENTS
+        ) return safeRegion
         val bounds = windowManager.currentWindowMetrics.bounds
         return battleDirectGameViewport(OverlayBounds(bounds.left, bounds.top, bounds.right, bounds.bottom))
     }

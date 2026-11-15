@@ -34,11 +34,14 @@ import android.view.Gravity
 import android.view.MotionEvent
 import android.view.Surface
 import android.view.View
+import android.view.ViewGroup
 import android.view.WindowManager
 import android.view.inputmethod.InputMethodManager
 import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
+import android.widget.ListPopupWindow
+import android.widget.ArrayAdapter
 import android.widget.PopupMenu
 import android.widget.TextView
 import android.widget.Toast
@@ -253,14 +256,19 @@ class OverlayCaptureService : Service() {
             presetRepository = presetRepository,
             publish = ::publish,
             onOverlayVisible = { visible ->
-                setBubbleWindowPresent(!visible)
-                if (!visible && projection == null) stopSelf()
+                if (visible) {
+                    // 红框 HUD 出现时保留悬浮球：一回合打完后要能马上重算下一次。
+                    if (assistantMode.usesFloatingBubble) showBubble()
+                } else {
+                    if (projection == null) stopSelf() else setBubbleWindowPresent(true)
+                }
             },
             shouldAutoOpenDirectHud = { assistantMode.autoOpenDirectHud },
             // The direct HUD has no PopupMenu phase and therefore no frozen menu frame.
             // Wait for a clean live frame after the HUD windows are dismissed instead.
             onRecognizeTeamPreview = { captureAndRecognizeTeamPreview(useFrozenMenuFrame = false) },
             onRecognizeOwnTeam = ::captureAndRecognizeOwnTeam,
+            onRecalculateFromScreen = ::captureAndComputeSnapshot,
         )
         ownTeamCorrectionController = OwnTeamCorrectionOverlayController(
             context = overlayWindowContext,
@@ -644,13 +652,15 @@ class OverlayCaptureService : Service() {
             text = "对局\n助手"
             textSize = 13f
             gravity = Gravity.CENTER
-            setTextColor(Color.WHITE)
+            setTextColor(Color.rgb(27, 74, 42))
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            // 自己的浅绿色半透明悬浮球：不沿用旧工程那套紫色渐变。
             background = GradientDrawable().apply {
                 shape = GradientDrawable.OVAL
-                setColor(Color.rgb(78, 92, 190))
-                setStroke((2 * density).toInt(), Color.WHITE)
+                setColor(Color.argb(176, 202, 232, 206))
+                setStroke((1 * density).toInt(), Color.argb(120, 255, 255, 255))
             }
-            elevation = 12f
+            elevation = 10f
         }
         val params = WindowManager.LayoutParams(
             size,
@@ -753,6 +763,19 @@ class OverlayCaptureService : Service() {
         mainHandler.postDelayed(settledOverlaySafeAreaRefresh, 250L)
     }
 
+    /** 识别诊断日志：写进应用私有目录 recognition.log，方便真机排查认出了什么。 */
+    private fun logRecognition(message: String) {
+        Log.i(LOG_TAG, message)
+        runCatching {
+            val dir = getExternalFilesDir("logs") ?: return
+            if (!dir.exists()) dir.mkdirs()
+            val file = java.io.File(dir, "recognition.log")
+            if (file.exists() && file.length() > 512_000L) file.delete()
+            val stamp = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.US).format(java.util.Date())
+            file.appendText("$stamp $message" + "\n", Charsets.UTF_8)
+        }
+    }
+
     private fun showBubbleMenu(anchor: View) {
         // Freeze the last complete screen frame before PopupMenu creates its
         // separate overlay window. The bubble itself is outside all 12
@@ -765,23 +788,46 @@ class OverlayCaptureService : Service() {
             frozenMenuBitmap = copyLatestFrameLocked()
         }
         frozenMenuFrameCopyMs = (System.nanoTime() - freezeStarted) / 1_000_000.0
-        PopupMenu(overlayWindowContext, anchor).apply {
-            menu.add(0, 1, 0, "录入我的队伍")
-            menu.add(0, 3, 1, "按画面计算（选招页）")
-            if (battleOverlayController.hasSession) {
-                menu.add(0, 9, 2, "记录当前宝可梦能力值")
-                menu.add(0, 8, 3, "收起红框 HUD")
+        val menuItems = mutableListOf(1 to "录入我的队伍", 3 to "按画面计算（选招页）")
+        if (battleOverlayController.hasSession) {
+            menuItems += 9 to "记录当前宝可梦能力值"
+            menuItems += 8 to "收起红框 HUD"
+        }
+        menuItems += 6 to "结束对局助手"
+        val density = resources.displayMetrics.density
+        val adapter = object : ArrayAdapter<String>(
+            overlayWindowContext,
+            android.R.layout.simple_list_item_1,
+            menuItems.map { it.second },
+        ) {
+            override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
+                val view = super.getView(position, convertView, parent) as TextView
+                view.textSize = 14f
+                view.gravity = Gravity.CENTER_VERTICAL
+                view.setPadding(
+                    (12 * density).toInt(),
+                    (7 * density).toInt(),
+                    (12 * density).toInt(),
+                    (7 * density).toInt(),
+                )
+                view.minHeight = (30 * density).toInt()
+                return view
             }
-            menu.add(0, 6, 4, "结束对局助手")
-            setOnMenuItemClickListener { item ->
-                when (item.itemId) {
+        }
+        val popup = ListPopupWindow(overlayWindowContext).apply {
+            setAdapter(adapter)
+            setWidth((152 * density).toInt())
+            isModal = true
+            verticalOffset = (-6 * density).toInt()
+            setOnItemClickListener { _, _, position, _ ->
+                when (menuItems[position].first) {
                     1 -> captureAndRecognizeOwnTeam()
                     3 -> captureAndComputeSnapshot()
                     6 -> requestStop()
                     8 -> battleOverlayController.hideDirectHud()
                     9 -> captureAndRecordOwnStats()
                 }
-                true
+                dismiss()
             }
             setOnDismissListener {
                 if (!recognizing) {
@@ -792,8 +838,9 @@ class OverlayCaptureService : Service() {
                     }
                 }
             }
-            show()
         }
+        popup.anchorView = anchor
+        popup.show()
     }
 
     private fun captureFrame(
@@ -812,7 +859,7 @@ class OverlayCaptureService : Service() {
             return
         }
         recognizing = true
-        Log.i(LOG_TAG, "Capture started")
+        logRecognition("capture started (frozenMenuFrame=$useFrozenMenuFrame)")
         onCaptureStarted()
         val requestedAt = System.nanoTime()
         hideStatusChip()
@@ -906,8 +953,8 @@ class OverlayCaptureService : Service() {
             publish("上一次识别不完整，已复位；可重新停在队伍页再点一次。")
             return
         }
-        val expectedType = importRepository.expectedCapturePageType() ?: OwnTeamPageType.MOVE_ITEM
-        Log.i(LOG_TAG, "Own-team recognition requested, expecting ${ownTeamPageLabel(expectedType)}")
+        val expectedType = importRepository.expectedCapturePageType()
+        Log.i(LOG_TAG, "Own-team recognition requested, expecting ${expectedType?.let(::ownTeamPageLabel) ?: "任意队伍页面"}")
         captureFrame(
             onCaptureStarted = {
                 battleOverlayController.onOwnTeamRecognitionStarted()
@@ -933,7 +980,7 @@ class OverlayCaptureService : Service() {
             val generation = ++ownTeamRecognitionGeneration
             updateOwnTeamRecognitionState(OwnTeamRecognitionHudState(
                 buttonLabel = "识别中…",
-                message = "正在识别${ownTeamPageLabel(expectedType)}，最长等待 90 秒",
+                message = "正在识别当前队伍页面，最长等待 90 秒",
                 inProgress = true,
             ))
             ownTeamRecognitionTask = ocrEngine.recognize(frame, expectedType) callback@{ result ->
@@ -964,7 +1011,7 @@ class OverlayCaptureService : Service() {
 
     private fun scheduleOwnTeamRecognitionWatchdog(
         generation: Long,
-        expectedType: OwnTeamPageType,
+        expectedType: OwnTeamPageType?,
         frame: Bitmap,
     ) {
         pendingOwnTeamSlowNotice = Runnable {
@@ -1006,12 +1053,12 @@ class OverlayCaptureService : Service() {
     }
 
     private fun acceptOwnTeamRecognitionFallback(
-        expectedType: OwnTeamPageType,
+        expectedType: OwnTeamPageType?,
         width: Int,
         height: Int,
         reason: String,
     ) {
-        if (expectedType == OwnTeamPageType.MOVE_ITEM) {
+        if (expectedType == null || expectedType == OwnTeamPageType.MOVE_ITEM) {
             resetOwnTeamImportAfterEmptyFirstPage(reason)
             return
         }
@@ -1204,7 +1251,8 @@ class OverlayCaptureService : Service() {
         Log.i(LOG_TAG, "Snapshot compute requested")
         captureFrame(
             onCaptureStarted = {
-                battleOverlayController.onOwnTeamRecognitionStarted()
+                // 这里不清伤害缓存：相同阵容组合要能直接命中上一回合的结果。
+                showStatusChip("正在按当前画面重新识别双方与招式…")
             },
             onBusy = { showStatusChip("上一次识别尚未结束，请稍候") },
             onFailure = { message -> publish(message) },
@@ -1220,10 +1268,11 @@ class OverlayCaptureService : Service() {
                     recognizing = false
                     frameTrackingEnabled = true
                     showAssistantEntry()
-                    Log.i(LOG_TAG, "PaddleOCR lines=" + paddleLines.size)
+                    logRecognition("paddle lines=" + paddleLines.size)
                     val matched = matchSnapshot(paddleLines)
                     if (matched == null) {
-                        publish("没有认出我方、对手或招式，请在选招页（能看到四个招式）时重试")
+                        logRecognition("snapshot match FAILED (paddle)")
+                        publish("没认出双方或招式，请停在能看到四个招式的画面再点一次")
                     } else {
                         battleOverlayController.startSnapshotSession(matched.own, matched.moves, matched.opponent)
                     }
@@ -1240,7 +1289,7 @@ class OverlayCaptureService : Service() {
                     result.onSuccess { lines ->
                         val matched = matchSnapshot(lines)
                         if (matched == null) {
-                            publish("没有认出我方、对手或招式，请在选招页（能看到四个招式）时重试")
+                            publish("没认出双方或招式，请停在能看到四个招式的画面再点一次")
                         } else {
                             battleOverlayController.startSnapshotSession(matched.own, matched.moves, matched.opponent)
                         }
@@ -1264,7 +1313,7 @@ class OverlayCaptureService : Service() {
             Log.i(LOG_TAG, "Snapshot OCR returned no text lines")
             return null
         }
-        Log.i(LOG_TAG, "Snapshot OCR lines: " + lines.take(25).joinToString(" | ") { line ->
+        logRecognition("snapshot OCR lines: " + lines.take(30).joinToString(" | ") { line ->
             "${line.text}@(${line.left},${line.top})/${line.imageWidth}x${line.imageHeight}"
         })
         val imageWidth = lines.firstOrNull()?.imageWidth ?: return null
@@ -1280,6 +1329,24 @@ class OverlayCaptureService : Service() {
                 var diff = 0
                 for (offset in n.indices) if (t[start + offset] != n[offset]) diff++
                 if (diff <= 1) return true
+            }
+            return false
+        }
+        // 招式名和宝可梦名一样做模糊匹配：OCR 经常把贴边的第一个字吃掉
+        // （"广域战力" → "域战力"），所以先容错「识别文本是正式名的一部分」，
+        // 再容错一字之差；只有 2 字以上的残片才允许，避免 "电" 这种单字乱撞。
+        fun moveFuzzyHit(text: String, name: String): Boolean {
+            val t = text.filter { it.isLetterOrDigit() }.lowercase()
+            val n = name.filter { it.isLetterOrDigit() }.lowercase()
+            if (t.isEmpty() || n.isEmpty()) return false
+            if (n.length >= 2 && t.contains(n)) return true
+            if (t.length >= 2 && n.contains(t) && n.length - t.length <= 2) return true
+            if (n.length >= 3 && t.length >= 3) {
+                for (start in 0..(t.length - n.length)) {
+                    var diff = 0
+                    for (offset in n.indices) if (t[start + offset] != n[offset]) diff++
+                    if (diff <= 1) return true
+                }
             }
             return false
         }
@@ -1315,7 +1382,7 @@ class OverlayCaptureService : Service() {
             .sortedBy { it.top }
             .mapNotNull { line ->
                 learnable
-                    .filter { it.entity.displayName.length >= 2 && fuzzyHit(line.text, it.entity.displayName) }
+                    .filter { it.entity.displayName.length >= 2 && moveFuzzyHit(line.text, it.entity.displayName) }
                     .maxByOrNull { it.entity.displayName.length }
                     ?: runCatching { ocrVocabulary.correctToOfficialName(line.text, "move") }.getOrNull()
                         ?.let { official -> learnable.firstOrNull { it.entity.displayName == official } }
@@ -1357,7 +1424,7 @@ class OverlayCaptureService : Service() {
             )
             importRepository.expectedCapturePageType() == OwnTeamPageType.STATS -> OwnTeamRecognitionHudState(
                 buttonLabel = "识别能力值（可选）",
-                message = messageOverride ?: "第 1 页已记录；可再识别能力值页补全，也可以直接按画面计算",
+                message = messageOverride ?: "已记录「招式与道具」页；可再识别「能力值」页补全，也可以直接按画面计算",
             )
             else -> OwnTeamRecognitionHudState()
         }
@@ -1584,7 +1651,8 @@ class OverlayCaptureService : Service() {
         mainHandler.post {
             if (destroyed) return@post
             CaptureUiState.message.value = message
-            toast(message)
+            // 只保留顶部深色胶囊这一处提示：之前这里还发了系统 Toast，
+            // 游戏画面上会同时出现「深色胶囊 + 带图标的白色气泡」，看起来像重复。
             showStatusChip(message)
         }
     }

@@ -132,7 +132,10 @@ internal fun PokedexScreen(repository: OpponentPresetRepository) {
 @Composable
 private fun PokedexRow(form: SpeciesFormOption, onClick: () -> Unit) {
     val total = form.baseStats.asMap().values.sumOf { it.toIntOrNull() ?: 0 }
-    Card(Modifier.fillMaxWidth().clickable(onClick = onClick)) {
+    Card(
+        Modifier.fillMaxWidth().clickable(onClick = onClick),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFFFFFFFF)),
+    ) {
         Row(
             Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -196,7 +199,10 @@ private fun PokemonDetailScreen(
             }
         }
         item {
-            Card(Modifier.fillMaxWidth()) {
+            Card(
+            Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFFFFFFFF)),
+        ) {
                 Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("种族值", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                     STAT_LABELS.forEach { (key, label) ->
@@ -207,7 +213,7 @@ private fun PokemonDetailScreen(
                                 Modifier
                                     .weight(1f)
                                     .height(8.dp)
-                                    .background(Color(0xFF263145), RoundedCornerShape(4.dp)),
+                                    .background(Color(0xFFE8EAEF), RoundedCornerShape(4.dp)),
                             ) {
                                 val bar = ((value.toIntOrNull() ?: 0) / 160f).coerceIn(0f, 1f)
                                 Box(
@@ -228,7 +234,10 @@ private fun PokemonDetailScreen(
             }
         }
         item {
-            Card(Modifier.fillMaxWidth()) {
+            Card(
+            Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFFFFFFFF)),
+        ) {
                 Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text("特性", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                     form.abilities.forEach { ability ->
@@ -263,7 +272,10 @@ private fun PokemonDetailScreen(
 @Composable
 private fun MoveRow(move: MoveValue, repository: OpponentPresetRepository) {
     val category = repository.moveCategoryFor(move)
-    Card(Modifier.fillMaxWidth()) {
+    Card(
+            Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFFFFFFFF)),
+        ) {
         Row(
             Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
