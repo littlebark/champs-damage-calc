@@ -75,6 +75,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -File android\tools\android\run-gr
 
 ## 6. 文档索引
 
+- `docs/spec-gap-audit.md`（2026-11-15，v2 已按 `1a11331` 重写）：用户口径 vs 代码现状逐条审计。14 项中 10 项已实现（三档四档位、物理/特殊分档、零加点兜底、最近原则、首页计算器、图鉴 tab、逐招红框）；仍未落地：唯一特性代入、原作者残留清理、包名、旧 OCR 依赖摘除。
+- `docs/android_three_tier_ui_2026-11-13_zh.md`：三档口径与图鉴/红框落地记录（含编译与数值抽查）。
+- `docs/ocr-paddle-2026-11-13_zh.md`：PaddleOCR(PP-OCRv6) 接入与解码细节。
 - `docs/android-port-plan.md`：移植/裁剪清单、构建耦合资源、引擎口径、落地阶段、副本内待删 Kotlin 文件表。
 - `docs/ui-spec.md`：计算器界面规格（手机上下堆叠、少填项、默认值表、结果区）；APK 计算器 UI 沿用此规格。
 - `docs/HANDOFF.md`：本文档。
@@ -110,6 +113,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -File android\tools\android\run-gr
 - 出包体积大主要来自 OpenCV `.so`、ML Kit OCR 模型、13.4MB 模板包、9.4MB presets；后续裁剪可评估只保留 arm64。
 - 数据冗余待清理：`data/ref/v18/champions-presets.json` 与 `android/src/data/damage/champions-presets.json` 是同一份 9.02MB，后续可让 Android 侧引用单一来源，避免双份进库。
 - 首次 `git add` 干跑：317 个文件、约 66.8MB；`reference/`、`build/`、`.gradle/`、`.kotlin/`、`.android-tools/`、`node_modules/`、`*.apk`、`local.properties`、`__pycache__/` 均未进暂存。
+- **git 操作必须挂代理**（2026-11-15 实测）：本机直连 `github.com:443` 会超时或被 reset（`Failed to connect to github.com port 443 after 21087 ms`；`curl 92 HTTP/2 stream ... CANCEL`）。FlClash 在 `127.0.0.1:7890` 提供 HTTP 代理，命令前加：
+  `git -c http.proxy=http://127.0.0.1:7890 -c https.proxy=http://127.0.0.1:7890 -c http.version=HTTP/1.1 fetch origin`
+  需要长期生效时：`git config --global http.proxy http://127.0.0.1:7890`（同时设 `https.proxy`）。
 - 网页旧基线数值不得漂移：基础 200~236 OHKO 9/16；生命宝珠 260~306；特攻+1 300~354；防御+1 134~158；适应力 268~316；湿润之声精神噪音打水河马 180~212（激流对照 60~71）；飘浮免疫地震 0~0。改内核后跑 `tests/verify_screenshot.py` 等回归核对。
 
 ## 10. 私有仓库（已推送）
