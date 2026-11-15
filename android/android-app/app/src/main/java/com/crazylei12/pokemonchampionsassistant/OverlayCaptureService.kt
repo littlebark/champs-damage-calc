@@ -47,6 +47,8 @@ import androidx.core.util.Consumer
 import androidx.window.java.layout.WindowInfoTrackerCallbackAdapter
 import androidx.window.layout.WindowInfoTracker
 import androidx.window.layout.WindowLayoutInfo
+import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Future
 import java.util.concurrent.TimeUnit
@@ -66,6 +68,14 @@ class OverlayCaptureService : Service() {
             "com.crazylei12.pokemonchampionsassistant.DEBUG_RECOGNIZE_TEAM_PREVIEW"
         private const val ACTION_OPEN_OWN_TEAM_CORRECTION =
             "com.crazylei12.pokemonchampionsassistant.OPEN_OWN_TEAM_CORRECTION"
+        private const val ACTION_COMPUTE_SNAPSHOT =
+            "com.crazylei12.pokemonchampionsassistant.COMPUTE_SNAPSHOT"
+        private const val ACTION_QUICK_SESSION =
+            "com.crazylei12.pokemonchampionsassistant.QUICK_SESSION"
+        private const val EXTRA_QUICK_TEAM_ID = "quick_team_id"
+        private const val EXTRA_QUICK_OPPONENT_NAME = "quick_opponent_name"
+        private const val EXTRA_QUICK_OPPONENT_SHOWDOWN = "quick_opponent_showdown"
+        private const val EXTRA_QUICK_OPPONENT_CANONICAL = "quick_opponent_canonical"
         private const val EXTRA_RESULT_CODE = "result_code"
         private const val EXTRA_RESULT_DATA = "result_data"
         private const val EXTRA_ASSISTANT_MODE = "assistant_mode"
@@ -99,6 +109,26 @@ class OverlayCaptureService : Service() {
             context.startService(
                 Intent(context, OverlayCaptureService::class.java).setAction(ACTION_OPEN_OWN_TEAM_CORRECTION),
             )
+        }
+
+        /** 选招页一键计算：不需要先识别阵容。 */
+        fun computeSnapshot(context: Context) {
+            context.startService(
+                Intent(context, OverlayCaptureService::class.java).setAction(ACTION_COMPUTE_SNAPSHOT),
+            )
+        }
+
+        /** 不识别阵容也能开局：用已录入队伍 + 当前对手直接建立对局。 */
+        fun startQuickSession(context: Context, teamId: String?, opponent: EntityValue) {
+            val intent = Intent(context, OverlayCaptureService::class.java).apply {
+                action = ACTION_QUICK_SESSION
+                putExtra(EXTRA_QUICK_TEAM_ID, teamId)
+                putExtra(EXTRA_QUICK_OPPONENT_NAME, opponent.displayName)
+                putExtra(EXTRA_QUICK_OPPONENT_SHOWDOWN, opponent.showdownId)
+                putExtra(EXTRA_QUICK_OPPONENT_CANONICAL, opponent.canonicalId)
+            }
+            runCatching { context.startService(intent) }
+                .onFailure { CaptureUiState.message.value = "请先启动对局助手，再开始快速对局" }
         }
     }
 
@@ -135,10 +165,13 @@ class OverlayCaptureService : Service() {
         }
     }
     private lateinit var ocrEngine: OwnTeamOcrEngine
+    private var paddleOcr: PaddleOcrEngine? = null
+    private val ocrVocabulary: EntityCatalog by lazy { EntityCatalog(this) }
     private lateinit var importRepository: OwnTeamImportRepository
     private lateinit var teamPreviewEngine: TeamPreviewRecognitionEngine
     private lateinit var teamPreviewRepository: TeamPreviewResultRepository
     private lateinit var damageRuntime: DamageEngineRuntime
+    private lateinit var presetRepository: OpponentPresetRepository
     private lateinit var battleOverlayController: BattleOverlayController
     private lateinit var ownTeamCorrectionController: OwnTeamCorrectionOverlayController
     private var bubble: View? = null
@@ -146,6 +179,7 @@ class OverlayCaptureService : Service() {
     private var teamNamePrompt: View? = null
     private var teamNamePromptParams: WindowManager.LayoutParams? = null
     private var activeToast: Toast? = null
+    private var statusChip: TextView? = null
     private var projection: MediaProjection? = null
     private var projectionCallback: MediaProjection.Callback? = null
     private var virtualDisplay: VirtualDisplay? = null
@@ -198,12 +232,17 @@ class OverlayCaptureService : Service() {
                 Log.w(LOG_TAG, "Fold posture updates are unavailable; window metrics remain active", error)
             }
         }
-        ocrEngine = OwnTeamOcrEngine(this)
+        paddleOcr = runCatching { PaddleOcrEngine(this) }.getOrElse { error ->
+            Log.e(LOG_TAG, "PaddleOCR could not be loaded", error)
+            null
+        }
+        ocrEngine = OwnTeamOcrEngine(this, paddleOcr)
         importRepository = OwnTeamImportRepository(this)
         teamPreviewEngine = TeamPreviewRecognitionEngine(this)
         teamPreviewEngine.prepare()
         teamPreviewRepository = TeamPreviewResultRepository(this)
         damageRuntime = DamageEngineRuntime(this)
+        presetRepository = OpponentPresetRepository(this)
         val battleSessionRepository = BattleSessionRepository(this)
         battleOverlayController = BattleOverlayController(
             context = overlayWindowContext,
@@ -211,7 +250,7 @@ class OverlayCaptureService : Service() {
             safeArea = safeArea,
             runtime = damageRuntime,
             sessionRepository = battleSessionRepository,
-            presetRepository = OpponentPresetRepository(this),
+            presetRepository = presetRepository,
             publish = ::publish,
             onOverlayVisible = { visible ->
                 setBubbleWindowPresent(!visible)
@@ -228,7 +267,7 @@ class OverlayCaptureService : Service() {
             windowManager = windowManager,
             safeArea = safeArea,
             importRepository = importRepository,
-            presetRepository = OpponentPresetRepository(this),
+            presetRepository = presetRepository,
             publish = ::publish,
             onOverlayVisible = { visible ->
                 setBubbleWindowPresent(!visible)
@@ -252,6 +291,30 @@ class OverlayCaptureService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) {
             requestStop()
+            return START_NOT_STICKY
+        }
+        if (intent?.action == ACTION_COMPUTE_SNAPSHOT) {
+            captureAndComputeSnapshot()
+            return START_NOT_STICKY
+        }
+        if (intent?.action == ACTION_QUICK_SESSION) {
+            val teamId = intent.getStringExtra(EXTRA_QUICK_TEAM_ID)
+            val name = intent.getStringExtra(EXTRA_QUICK_OPPONENT_NAME).orEmpty()
+            val showdown = intent.getStringExtra(EXTRA_QUICK_OPPONENT_SHOWDOWN).orEmpty()
+            val canonical = intent.getStringExtra(EXTRA_QUICK_OPPONENT_CANONICAL).orEmpty()
+            if (name.isBlank() || showdown.isBlank()) {
+                publish("请先选择对手宝可梦")
+            } else {
+                battleOverlayController.startQuickSession(
+                    teamId,
+                    EntityValue(
+                        canonicalId = canonical,
+                        showdownId = showdown,
+                        displayName = name,
+                        entityType = "species",
+                    ),
+                )
+            }
             return START_NOT_STICKY
         }
         if (intent?.action == ACTION_OPEN_OWN_TEAM_CORRECTION) {
@@ -704,27 +767,19 @@ class OverlayCaptureService : Service() {
         frozenMenuFrameCopyMs = (System.nanoTime() - freezeStarted) / 1_000_000.0
         PopupMenu(overlayWindowContext, anchor).apply {
             menu.add(0, 1, 0, "录入我的队伍")
-            menu.add(0, 2, 1, "识别双方阵容")
+            menu.add(0, 3, 1, "按画面计算（选招页）")
             if (battleOverlayController.hasSession) {
-                menu.add(0, 4, 2, "显示对战 HUD")
-                menu.add(0, 8, 3, "打开详细面板")
+                menu.add(0, 9, 2, "记录当前宝可梦能力值")
+                menu.add(0, 8, 3, "收起红框 HUD")
             }
-            if (importRepository.hasCorrectionDraft()) {
-                menu.add(0, 7, 4, "继续核对我的队伍")
-            }
-            if (importRepository.hasPendingTeam()) {
-                menu.add(0, 5, 5, "为我的队伍命名并保存")
-            }
-            menu.add(0, 6, 6, "结束对局助手")
+            menu.add(0, 6, 4, "结束对局助手")
             setOnMenuItemClickListener { item ->
                 when (item.itemId) {
                     1 -> captureAndRecognizeOwnTeam()
-                    2 -> captureAndRecognizeTeamPreview()
-                    4 -> battleOverlayController.revealDirectHud()
-                    5 -> showTeamNamePrompt()
+                    3 -> captureAndComputeSnapshot()
                     6 -> requestStop()
-                    7 -> openOwnTeamCorrection()
-                    8 -> battleOverlayController.showPanel()
+                    8 -> battleOverlayController.hideDirectHud()
+                    9 -> captureAndRecordOwnStats()
                 }
                 true
             }
@@ -750,13 +805,17 @@ class OverlayCaptureService : Service() {
     ) {
         if (destroyed) return
         if (recognizing) {
+            Log.i(LOG_TAG, "Capture skipped: previous recognition still running")
             toast("上一次识别仍在进行，请稍候")
+            showStatusChip("上一次识别仍在进行，请稍候")
             onBusy()
             return
         }
         recognizing = true
+        Log.i(LOG_TAG, "Capture started")
         onCaptureStarted()
         val requestedAt = System.nanoTime()
+        hideStatusChip()
         removeBubble()
         // Toasts are part of the MediaProjection output. In landscape they sit
         // across the bottom two cards, so cancel any result Toast and update
@@ -840,20 +899,15 @@ class OverlayCaptureService : Service() {
 
     private fun captureAndRecognizeOwnTeam() {
         if (importRepository.hasPendingTeam()) {
-            publish("请先为上一支已识别队伍命名并保存")
-            showTeamNamePrompt()
-            return
+            autoSaveOwnTeam()
         }
         if (importRepository.hasCorrectionDraft()) {
-            refreshOwnTeamRecognitionState()
-            openOwnTeamCorrection()
+            runCatching { importRepository.discardCurrentImport() }
+            publish("上一次识别不完整，已复位；可重新停在队伍页再点一次。")
             return
         }
-        val expectedType = importRepository.expectedCapturePageType() ?: run {
-            refreshOwnTeamRecognitionState()
-            openOwnTeamCorrection()
-            return
-        }
+        val expectedType = importRepository.expectedCapturePageType() ?: OwnTeamPageType.MOVE_ITEM
+        Log.i(LOG_TAG, "Own-team recognition requested, expecting ${ownTeamPageLabel(expectedType)}")
         captureFrame(
             onCaptureStarted = {
                 battleOverlayController.onOwnTeamRecognitionStarted()
@@ -977,17 +1031,23 @@ class OverlayCaptureService : Service() {
             .onSuccess { saved ->
                 CaptureUiState.ownTeamDraftRevision.value += 1
                 val message = messageOverride ?: saved.message
-                publish(message)
                 when (saved.nextStep) {
-                    OwnTeamImportNextStep.MANUAL_CORRECTION -> {
-                        updateOwnTeamRecognitionState(OwnTeamRecognitionHudState(
-                            buttonLabel = "继续核对",
-                            message = "识别已结束，请在核对窗口确认或补全内容",
-                        ))
-                        openOwnTeamCorrection()
+                    OwnTeamImportNextStep.MANUAL_CORRECTION -> autoSaveOwnTeamLenient()
+                    OwnTeamImportNextStep.CAPTURE_MOVE_ITEM -> {
+                        if (importRepository.hasStatsPage()) {
+                            autoSaveStatsOnlyTeam()
+                        } else {
+                            publish(message)
+                            refreshOwnTeamRecognitionState(message)
+                            showAssistantEntry()
+                        }
                     }
-                    OwnTeamImportNextStep.NAME_TEAM -> showTeamNamePrompt()
+                    OwnTeamImportNextStep.NAME_TEAM -> {
+                        publish(message)
+                        autoSaveOwnTeam()
+                    }
                     else -> {
+                        publish(message)
                         refreshOwnTeamRecognitionState(message)
                         showAssistantEntry()
                     }
@@ -1005,14 +1065,278 @@ class OverlayCaptureService : Service() {
             }
     }
 
-    private fun resetOwnTeamImportAfterEmptyFirstPage(reason: String) {
-        runCatching { importRepository.discardCurrentImport() }
+    /** 对战中停在“当前状态”页时，读取这只宝可梦的能力值并写回队伍。 */
+    private fun captureAndRecordOwnStats() {
+        captureFrame(
+            onCaptureStarted = {
+                battleOverlayController.onOwnTeamRecognitionStarted()
+                publish("正在读取当前宝可梦状态页…")
+            },
+            onFailure = { message ->
+                publish(message)
+                battleOverlayController.showDirectHudEntry()
+            },
+        ) { frame, _ ->
+            val generation = ++ownTeamRecognitionGeneration
+            publish("正在识别能力值…")
+            ownTeamRecognitionTask = ocrEngine.recognizeSingleStats(frame) callback@{ result ->
+                if (destroyed) {
+                    recycleOwnTeamFrame(frame)
+                    return@callback
+                }
+                mainHandler.post {
+                    recycleOwnTeamFrame(frame)
+                    if (destroyed || generation != ownTeamRecognitionGeneration) return@post
+                    frameTrackingEnabled = true
+                    recognizing = false
+                    result.onSuccess { record ->
+                        battleOverlayController.recordOwnStats(record.actualStats, record.statPoints)
+                    }.onFailure { error ->
+                        Log.e(LOG_TAG, "Single stats recognition failed", error)
+                        publish("没有识别到能力值面板，请确认停在“状态”页后重试")
+                        battleOverlayController.showDirectHudEntry()
+                    }
+                }
+            }
+        }
+    }
+
+    /** 两张队伍页面都识别完成后直接入库，不再弹命名窗口。 */
+    private fun autoSaveOwnTeam() {
+        if (!importRepository.hasPendingTeam()) return
+        val name = "对局录入 " + LocalDateTime.now().format(DateTimeFormatter.ofPattern("MM-dd HH:mm"))
+        runCatching { importRepository.savePendingTeam(name) }
+            .onSuccess { saved ->
+                CaptureUiState.teamLibraryRevision.value += 1
+                updateOwnTeamRecognitionState(OwnTeamRecognitionHudState())
+                showAssistantEntry()
+                publish("已自动记录我方队伍数值（$name）；${saved.message}")
+            }
+            .onFailure { error ->
+                Log.e(LOG_TAG, "Could not auto-save recognized own team", error)
+                updateOwnTeamRecognitionState(OwnTeamRecognitionHudState(
+                    buttonLabel = "重新识别",
+                    message = "队伍自动保存失败，请重新识别两张队伍页面",
+                ))
+                showAssistantEntry()
+                publish("队伍自动保存失败，请重新识别")
+            }
+    }
+
+    /**
+     * 两页都在但识别不完整时，先把能用的内容入库，再用图鉴默认值补齐特性、招式和能力值，
+     * 这样对局建立时不会因为“队伍不完整”被挡掉。
+     */
+    private fun autoSaveOwnTeamLenient() {
+        val name = "对局录入 " + LocalDateTime.now().format(DateTimeFormatter.ofPattern("MM-dd HH:mm"))
+        runCatching { importRepository.saveCurrentImportLenient(name) }
+            .onSuccess { saved ->
+                val teamId = saved.savedJson?.optString("savedTeamId").orEmpty()
+                if (teamId.isNotEmpty()) {
+                    runCatching { repairTeamDefaults(teamId) }
+                        .onFailure { Log.e(LOG_TAG, "Could not complete saved team with defaults", it) }
+                }
+                CaptureUiState.ownTeamDraftRevision.value += 1
+                CaptureUiState.teamLibraryRevision.value += 1
+                updateOwnTeamRecognitionState(OwnTeamRecognitionHudState())
+                showAssistantEntry()
+                publish("已记录我方队伍（$name）；缺的招式/特性/能力值按图鉴默认补齐")
+            }
+            .onFailure { error ->
+                Log.e(LOG_TAG, "Could not save own team leniently", error)
+                updateOwnTeamRecognitionState(OwnTeamRecognitionHudState(
+                    buttonLabel = "重新识别",
+                    message = "队伍保存失败，请重新识别两张队伍页面",
+                ))
+                showAssistantEntry()
+                publish("队伍保存失败，请重新识别两张队伍页面")
+            }
+    }
+
+    /** 只识别了“能力值”页时也直接入库，招式/特性按图鉴默认补齐。 */
+    private fun autoSaveStatsOnlyTeam() {
+        val name = "状态页录入 " + LocalDateTime.now().format(DateTimeFormatter.ofPattern("MM-dd HH:mm"))
+        runCatching { importRepository.saveStatsOnly(name) }
+            .onSuccess { saved ->
+                val teamId = saved.savedJson?.optString("savedTeamId").orEmpty()
+                if (teamId.isNotEmpty()) {
+                    runCatching { repairTeamDefaults(teamId) }
+                        .onFailure { Log.e(LOG_TAG, "Could not complete stats-only team", it) }
+                }
+                CaptureUiState.ownTeamDraftRevision.value += 1
+                CaptureUiState.teamLibraryRevision.value += 1
+                updateOwnTeamRecognitionState(OwnTeamRecognitionHudState())
+                showAssistantEntry()
+                publish("已按状态页记录我方能力值并保存（$name），招式与特性用图鉴默认，可继续按画面计算")
+            }
+            .onFailure { error ->
+                Log.e(LOG_TAG, "Could not save stats-only team", error)
+                publish("能力值保存失败，请重试")
+            }
+    }
+
+    /** 补齐队伍里每只宝可梦缺失的特性、招式和六项实际能力值。 */
+    private fun repairTeamDefaults(teamId: String) {
+        val team = TeamRepository.load(this).firstOrNull { it.id == teamId } ?: return
+        team.pokemon.forEachIndexed { index, config ->
+            val ability = config.ability ?: presetRepository.abilitiesFor(config.species).firstOrNull()
+            val moves = if (config.moves.isEmpty()) {
+                presetRepository.learnableMovesFor(config.species)
+                    .filter { (it.basePower ?: 0) > 0 }
+                    .take(4)
+            } else {
+                config.moves
+            }
+            val actualStats = if (config.hasCompleteActualStats()) {
+                config.actualStats
+            } else {
+                presetRepository.statsFor(config.species, config.statPoints, config.statAlignment)
+            }
+            val fixed = config.copy(ability = ability, moves = moves, actualStats = actualStats)
+            if (fixed != config) {
+                TeamRepository.updatePokemon(this, teamId, index, fixed)
+            }
+        }
+    }
+
+    /** 选招页一键计算：识别我方当前宝可梦、对手和四个招式，直接开 HUD 出三档结果。 */
+    private fun captureAndComputeSnapshot() {
+        Log.i(LOG_TAG, "Snapshot compute requested")
+        captureFrame(
+            onCaptureStarted = {
+                battleOverlayController.onOwnTeamRecognitionStarted()
+            },
+            onBusy = { showStatusChip("上一次识别尚未结束，请稍候") },
+            onFailure = { message -> publish(message) },
+        ) { frame, _ ->
+            val paddleLines = runCatching { paddleOcr?.recognize(frame) ?: emptyList() }.getOrElse { error ->
+                Log.e(LOG_TAG, "PaddleOCR failed, falling back to ML Kit", error)
+                emptyList()
+            }
+            if (paddleLines.isNotEmpty()) {
+                mainHandler.post {
+                    recycleOwnTeamFrame(frame)
+                    if (destroyed) return@post
+                    recognizing = false
+                    frameTrackingEnabled = true
+                    showAssistantEntry()
+                    Log.i(LOG_TAG, "PaddleOCR lines=" + paddleLines.size)
+                    val matched = matchSnapshot(paddleLines)
+                    if (matched == null) {
+                        publish("没有认出我方、对手或招式，请在选招页（能看到四个招式）时重试")
+                    } else {
+                        battleOverlayController.startSnapshotSession(matched.own, matched.moves, matched.opponent)
+                    }
+                }
+                return@captureFrame
+            }
+            ocrEngine.recognizeSnapshotText(frame) callback@{ result ->
+                mainHandler.post {
+                    recycleOwnTeamFrame(frame)
+                    if (destroyed) return@post
+                    recognizing = false
+                    frameTrackingEnabled = true
+                    showAssistantEntry()
+                    result.onSuccess { lines ->
+                        val matched = matchSnapshot(lines)
+                        if (matched == null) {
+                            publish("没有认出我方、对手或招式，请在选招页（能看到四个招式）时重试")
+                        } else {
+                            battleOverlayController.startSnapshotSession(matched.own, matched.moves, matched.opponent)
+                        }
+                    }.onFailure { error ->
+                        Log.e(LOG_TAG, "Snapshot recognition failed", error)
+                        publish("识别失败，请重试")
+                    }
+                }
+            }
+        }
+    }
+
+    private data class SnapshotMatch(
+        val own: EntityValue,
+        val opponent: EntityValue,
+        val moves: List<MoveValue>,
+    )
+
+    private fun matchSnapshot(lines: List<SnapshotTextLine>): SnapshotMatch? {
+        if (lines.isEmpty()) {
+            Log.i(LOG_TAG, "Snapshot OCR returned no text lines")
+            return null
+        }
+        Log.i(LOG_TAG, "Snapshot OCR lines: " + lines.take(25).joinToString(" | ") { line ->
+            "${line.text}@(${line.left},${line.top})/${line.imageWidth}x${line.imageHeight}"
+        })
+        val imageWidth = lines.firstOrNull()?.imageWidth ?: return null
+        val imageHeight = lines.firstOrNull()?.imageHeight ?: return null
+        val species = presetRepository.speciesCatalog
+        fun fuzzyHit(text: String, name: String): Boolean {
+            val t = text.filter { it.isLetterOrDigit() }.lowercase()
+            val n = name.filter { it.isLetterOrDigit() }.lowercase()
+            if (n.length < 2 || t.length < n.length) return false
+            if (t.contains(n)) return true
+            if (n.length < 3) return false
+            for (start in 0..(t.length - n.length)) {
+                var diff = 0
+                for (offset in n.indices) if (t[start + offset] != n[offset]) diff++
+                if (diff <= 1) return true
+            }
+            return false
+        }
+        fun matchSpecies(text: String): EntityValue? = species
+            .filter { it.displayName.length >= 2 && fuzzyHit(text, it.displayName) }
+            .maxByOrNull { it.displayName.length }
+        // 先按字面匹配，再用词库（宝可梦正式名）做编辑距离纠正，避免“玛カ露丽”这类一字之差。
+        fun resolveSpecies(text: String): EntityValue? {
+            matchSpecies(text)?.let { return it }
+            val official = runCatching { ocrVocabulary.correctToOfficialName(text, "species") }.getOrNull()
+                ?: return null
+            return species.firstOrNull { it.displayName == official }
+                ?: species.firstOrNull { fuzzyHit(official, it.displayName) }
+        }
+        val speciesLines = lines.mapNotNull { line -> resolveSpecies(line.text)?.let { line to it } }
+        // 对手名牌在右上、我方名牌在左下；不依赖严格阈值，按相对位置取最靠上/最靠下的一条。
+        val opponentLine = speciesLines
+            .filter { it.first.top < imageHeight * 0.40 && it.first.left > imageWidth * 0.35 }
+            .minByOrNull { it.first.top }
+            ?: speciesLines.minByOrNull { it.first.top }
+        val ownLine = speciesLines
+            .filter { it.first.top > imageHeight * 0.45 && it.first.left < imageWidth * 0.5 }
+            .maxByOrNull { it.first.top }
+            ?: speciesLines.maxByOrNull { it.first.top }
+        if (opponentLine == null || ownLine == null || opponentLine.second == ownLine.second) {
+            Log.i(LOG_TAG, "Snapshot match failed: species lines=${speciesLines.size}")
+            return null
+        }
+        val own = ownLine.second
+        val learnable = presetRepository.learnableMovesFor(own)
+        val moveLines = lines
+            .filter { it.left > imageWidth * 0.45 }
+            .sortedBy { it.top }
+            .mapNotNull { line ->
+                learnable
+                    .filter { it.entity.displayName.length >= 2 && fuzzyHit(line.text, it.entity.displayName) }
+                    .maxByOrNull { it.entity.displayName.length }
+                    ?: runCatching { ocrVocabulary.correctToOfficialName(line.text, "move") }.getOrNull()
+                        ?.let { official -> learnable.firstOrNull { it.entity.displayName == official } }
+            }
+            .distinctBy { it.entity.showdownId }
+        val moves = if (moveLines.isEmpty()) {
+            learnable.filter { (it.basePower ?: 0) > 0 }.take(4)
+        } else {
+            moveLines.take(4)
+        }
+        Log.i(LOG_TAG, "Snapshot matched: own=${own.displayName} opponent=${opponentLine.second.displayName} moves=${moves.map { it.entity.displayName }}")
+        return SnapshotMatch(own, opponentLine.second, moves)
+    }
+
+    private fun resetOwnTeamImportAfterEmptyFirstPage(reason: String) {        runCatching { importRepository.discardCurrentImport() }
             .onSuccess {
                 recognizing = false
                 CaptureUiState.ownTeamDraftRevision.value += 1
                 updateOwnTeamRecognitionState(OwnTeamRecognitionHudState())
                 showAssistantEntry()
-                publish("$reason；本次队伍识别已复位，请切到招式与道具页后重试")
+                publish("$reason；本次队伍识别已复位，可回到队伍页重新识别")
             }
             .onFailure { error ->
                 Log.e(LOG_TAG, "Could not reset empty first own-team page", error)
@@ -1028,12 +1352,12 @@ class OverlayCaptureService : Service() {
     private fun refreshOwnTeamRecognitionState(messageOverride: String? = null) {
         val state = when {
             importRepository.hasCorrectionDraft() -> OwnTeamRecognitionHudState(
-                buttonLabel = "继续核对",
-                message = messageOverride ?: "两张页面已处理，请确认或手动补全识别结果",
+                buttonLabel = "识别已记录（可选补全）",
+                message = messageOverride ?: "这一页已记录，招式与能力值可用图鉴默认补齐；不影响按画面计算",
             )
             importRepository.expectedCapturePageType() == OwnTeamPageType.STATS -> OwnTeamRecognitionHudState(
-                buttonLabel = "识别能力值",
-                message = messageOverride ?: "第 1 页已记录：请切到能力值页后再次识别",
+                buttonLabel = "识别能力值（可选）",
+                message = messageOverride ?: "第 1 页已记录；可再识别能力值页补全，也可以直接按画面计算",
             )
             else -> OwnTeamRecognitionHudState()
         }
@@ -1256,11 +1580,56 @@ class OverlayCaptureService : Service() {
 
     private fun publish(message: String) {
         if (destroyed) return
+        Log.i(LOG_TAG, "publish: $message")
         mainHandler.post {
             if (destroyed) return@post
             CaptureUiState.message.value = message
             toast(message)
+            showStatusChip(message)
         }
+    }
+
+    /** MIUI 常把后台 Toast 吞掉，这里额外在游戏画面上方显示一条短提示。 */
+    private fun showStatusChip(message: String) {
+        if (destroyed) return
+        mainHandler.post {
+            if (destroyed) return@post
+            hideStatusChip()
+            val density = resources.displayMetrics.density
+            val chip = TextView(overlayWindowContext).apply {
+                text = message
+                textSize = 13f
+                setTextColor(Color.WHITE)
+                setPadding((14 * density).toInt(), (8 * density).toInt(), (14 * density).toInt(), (8 * density).toInt())
+                maxLines = 3
+                background = GradientDrawable().apply {
+                    setColor(Color.argb(235, 22, 30, 46))
+                    cornerRadius = 12 * density
+                    setStroke((1 * density).toInt().coerceAtLeast(1), Color.argb(200, 119, 215, 196))
+                }
+            }
+            val params = WindowManager.LayoutParams(
+                WindowManager.LayoutParams.WRAP_CONTENT,
+                WindowManager.LayoutParams.WRAP_CONTENT,
+                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+                PixelFormat.TRANSLUCENT,
+            ).apply {
+                gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
+                y = (56 * density).toInt()
+            }
+            runCatching {
+                windowManager.addView(chip, params)
+                statusChip = chip
+                mainHandler.postDelayed({ hideStatusChip() }, 3200)
+            }.onFailure { Log.w(LOG_TAG, "Could not show status chip", it) }
+        }
+    }
+
+    private fun hideStatusChip() {
+        val chip = statusChip ?: return
+        statusChip = null
+        runCatching { windowManager.removeView(chip) }
     }
 
     private fun toast(message: String) {
@@ -1366,10 +1735,12 @@ class OverlayCaptureService : Service() {
         ownTeamCorrectionController.close()
         battleOverlayController.closeAll()
         dismissTeamNamePrompt()
+        hideStatusChip()
         removeBubble()
         bubbleParams = null
         releaseProjection()
         ocrEngine.close()
+        paddleOcr?.close()
         teamPreviewEngine.close()
         damageRuntime.destroy()
         CaptureUiState.running.value = false
@@ -1377,3 +1748,4 @@ class OverlayCaptureService : Service() {
         super.onDestroy()
     }
 }
+

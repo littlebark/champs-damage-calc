@@ -18,6 +18,7 @@ data class MoveValue(
     val entity: EntityValue,
     val basePower: Int? = null,
     val type: String? = null,
+    val category: String? = null,
 )
 
 data class StatFields(
@@ -141,6 +142,7 @@ data class PokemonEditorState(
     val knownItem: EntityValue?,
     val knownMoves: List<MoveValue>,
     val knownStatAlignment: EntityValue?,
+    val gender: String? = null,
 ) {
     companion object {
         fun from(config: PokemonConfig) = PokemonEditorState(
@@ -157,6 +159,7 @@ data class PokemonEditorState(
             knownItem = config.item,
             knownMoves = config.moves,
             knownStatAlignment = config.statAlignment,
+            gender = config.gender,
         )
     }
 
@@ -168,6 +171,7 @@ data class PokemonEditorState(
             put("actualStats", actualStats.toJson())
             put("statPoints", statPoints.toJson(includeZero = true))
             knownStatAlignment?.let { put("statAlignment", it.toJson()) }
+            showdownGender(gender)?.let { put("gender", it) }
             if (abilityId.isNotBlank()) {
                 put("ability", entityForInput("ability", abilityId, knownAbility))
             }
@@ -443,9 +447,12 @@ fun buildDamageRequest(
     opponentLightScreen: Boolean,
     critical: Boolean,
     spread: Boolean,
+    tierProfiles: Boolean = false,
+    attackerStages: Map<String, Int> = emptyMap(),
+    defenderStages: Map<String, Int> = emptyMap(),
 ): String {
-    val ownBuild = own.toBuildJson("OWN_BUILD")
-    val opponentBuild = opponent.toBuildJson("PROFILE_PRESET")
+    val ownBuild = own.toBuildJson("OWN_BUILD").apply { putStages(attackerStages) }
+    val opponentBuild = opponent.toBuildJson("PROFILE_PRESET").apply { putStages(defenderStages) }
     val root = JSONObject().apply {
         put("requestId", "android-manual-${System.currentTimeMillis()}")
         put("calculationDirection", direction)
@@ -466,7 +473,11 @@ fun buildDamageRequest(
         root.put("defenderSide", "OPPONENT")
         root.put("attacker", ownBuild)
         root.put("defenderIdentity", JSONObject().put("species", opponentBuild.getJSONObject("species")))
-        root.put("defenderProfileSet", exactDefenderProfile(opponentBuild))
+        root.put(
+            "defenderProfileSet",
+            if (tierProfiles) tierDefenderProfileSet(opponentBuild.getJSONObject("species"))
+            else exactDefenderProfile(opponentBuild),
+        )
         root.put("moveSelection", if (selectedMove.isNullOrBlank()) {
             JSONObject().put("mode", "ALL_ATTACKER_MOVES")
         } else {
@@ -524,6 +535,14 @@ fun buildDamageRequest(
     return root.toString()
 }
 
+private fun JSONObject.putStages(stages: Map<String, Int>) {
+    val nonZero = stages.filterValues { it != 0 }
+    if (nonZero.isEmpty()) return
+    put("statStages", JSONObject().apply {
+        nonZero.forEach { (stat, stage) -> put(stat, stage.coerceIn(-6, 6)) }
+    })
+}
+
 private fun exactDefenderProfile(build: JSONObject) = JSONObject().apply {
     put("defenderSpecies", build.getJSONObject("species"))
     put("selectedProfileId", "manual-exact-defender")
@@ -537,8 +556,66 @@ private fun exactDefenderProfile(build: JSONObject) = JSONObject().apply {
     }))
 }
 
+/**
+ * 对手未知配置的三档包络。四个档位一次算完：
+ * 1) HP +2、其余 0、性格中性；2) HP +32、其余 0、中性；
+ * 3) HP +32 + 防御 +32 + 防御性格 ×1.1（物理招）；4) HP +32 + 特防 +32 + 特防性格 ×1.1（特殊招）。
+ * 展示时按招式物理/特殊在 3、4 档中自动取一。
+ */
+internal fun tierDefenderProfileSet(species: JSONObject): JSONObject = JSONObject().apply {
+    put("defenderSpecies", species)
+    put("selectedProfileId", TIER_PROFILE_HP2)
+    put("profiles", JSONArray().apply {
+        put(tierProfile(TIER_PROFILE_HP2, "对手 HP+2，其余 0，性格中性", JSONObject().put("hp", 2), null))
+        put(tierProfile(TIER_PROFILE_HP32, "对手 HP+32，其余 0，性格中性", JSONObject().put("hp", 32), null))
+        put(
+            tierProfile(
+                TIER_PROFILE_PHYSICAL,
+                "对手 HP+32、防御+32、防御性格 ×1.1",
+                JSONObject().put("hp", 32).put("def", 32),
+                natureEntity("Bold", "大胆"),
+            ),
+        )
+        put(
+            tierProfile(
+                TIER_PROFILE_SPECIAL,
+                "对手 HP+32、特防+32、特防性格 ×1.1",
+                JSONObject().put("hp", 32).put("spd", 32),
+                natureEntity("Calm", "温和"),
+            ),
+        )
+    })
+}
+
+internal const val TIER_PROFILE_HP2 = "tier.hp2"
+internal const val TIER_PROFILE_HP32 = "tier.hp32"
+internal const val TIER_PROFILE_PHYSICAL = "tier.hp32-def32"
+internal const val TIER_PROFILE_SPECIAL = "tier.hp32-spd32"
+
+private fun tierProfile(
+    id: String,
+    name: String,
+    statPoints: JSONObject,
+    nature: JSONObject?,
+): JSONObject = JSONObject().apply {
+    put("profileId", id)
+    put("profileName", name)
+    put("source", "GENERATED_TEMPLATE")
+    put("level", 50)
+    put("statPoints", statPoints)
+    nature?.let { put("statAlignment", it) }
+}
+
+private fun natureEntity(showdownId: String, displayName: String): JSONObject = JSONObject().apply {
+    put("entityType", "nature")
+    put("canonicalId", "nature.${showdownId.lowercase()}")
+    put("showdownId", showdownId)
+    put("displayName", displayName)
+    put("source", "system")
+}
+
 private fun copyBuildFields(source: JSONObject, target: JSONObject, includeMoves: Boolean) {
-    listOf("level", "actualStats", "statPoints", "ability", "item").forEach { key ->
+    listOf("level", "actualStats", "statPoints", "ability", "item", "gender", "statAlignment", "statStages").forEach { key ->
         if (source.has(key)) target.put(key, source.get(key))
     }
     if (includeMoves && source.has("moves")) target.put("moves", source.getJSONArray("moves"))

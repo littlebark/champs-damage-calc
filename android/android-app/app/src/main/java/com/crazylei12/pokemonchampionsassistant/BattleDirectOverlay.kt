@@ -31,6 +31,13 @@ private const val TYPE_MATCHUP_ROW_GAP_WEIGHT = 4f
 internal const val BATTLE_DIRECT_HUD_SETTINGS_LABEL = "对战设置 ▾"
 internal const val BATTLE_DIRECT_HUD_FULL_PANEL_LABEL = "完整面板"
 
+internal val DAMAGE_ELEMENTS = listOf(
+    BattleDirectHudElement.DAMAGE_1,
+    BattleDirectHudElement.DAMAGE_2,
+    BattleDirectHudElement.DAMAGE_3,
+    BattleDirectHudElement.DAMAGE_4,
+)
+
 internal enum class BattleDirectHudElement {
     EDIT,
     REMATCH,
@@ -46,7 +53,10 @@ internal enum class BattleDirectHudElement {
     OPPONENT_RIGHT,
     OWN_LEFT,
     OWN_RIGHT,
-    DAMAGE,
+    DAMAGE_1,
+    DAMAGE_2,
+    DAMAGE_3,
+    DAMAGE_4,
     DETAIL,
 }
 
@@ -79,7 +89,10 @@ internal object BattleDirectHudLayout {
         BattleDirectHudElement.OPPONENT_RIGHT to BattleDirectHudAnchor(0.797f, 0.158f, 0.203f),
         BattleDirectHudElement.OWN_LEFT to BattleDirectHudAnchor(0.053f, 0.762f, 0.188f),
         BattleDirectHudElement.OWN_RIGHT to BattleDirectHudAnchor(0.251f, 0.762f, 0.193f),
-        BattleDirectHudElement.DAMAGE to BattleDirectHudAnchor(0.021f, 0.665f, 0.43f),
+        BattleDirectHudElement.DAMAGE_1 to BattleDirectHudAnchor(0.462f, 0.500f, 0.212f),
+        BattleDirectHudElement.DAMAGE_2 to BattleDirectHudAnchor(0.462f, 0.595f, 0.212f),
+        BattleDirectHudElement.DAMAGE_3 to BattleDirectHudAnchor(0.462f, 0.690f, 0.212f),
+        BattleDirectHudElement.DAMAGE_4 to BattleDirectHudAnchor(0.462f, 0.785f, 0.212f),
         BattleDirectHudElement.DETAIL to BattleDirectHudAnchor(0.937f, 0.328f),
     )
 }
@@ -271,33 +284,48 @@ internal fun battleDirectSpeedRangesOverlap(first: IntRange, second: IntRange): 
 
 internal fun parseBattleDirectDamageValues(raw: String, configuredMoves: List<MoveValue>): List<String> {
     val envelope = JSONObject(raw)
-    if (!envelope.optBoolean("ok")) return List(4) { index -> "${index + 1} ?" }
+    if (!envelope.optBoolean("ok")) return List(4) { "" }
     val results = envelope.getJSONObject("result").getJSONArray("moveResults")
     val byId = (0 until results.length()).associate { index ->
         val result = results.getJSONObject(index)
         normalizeDirectId(result.optString("moveId")) to result
     }
     return (0 until 4).map { index ->
-        val move = configuredMoves.getOrNull(index) ?: return@map "${index + 1} —"
+        val move = configuredMoves.getOrNull(index) ?: return@map ""
         val result = sequenceOf(move.entity.canonicalId, move.entity.showdownId, move.entity.displayName)
             .map(::normalizeDirectId)
             .mapNotNull(byId::get)
             .firstOrNull()
-            ?: return@map "${index + 1} ?"
-        if (result.optString("moveCategory") == "Status") return@map "${index + 1} —"
-        val range = result.optJSONObject("selectedProfileRange") ?: return@map "${index + 1} ?"
-        val minimum = range.optDouble("minPercent", Double.NaN)
-        val maximum = range.optDouble("maxPercent", Double.NaN)
-        if (!minimum.isFinite() || !maximum.isFinite()) return@map "${index + 1} ?"
-        if (maximum <= 0.0) "${index + 1} 0%" else String.format(
-            Locale.US,
-            "%d %.1f–%.1f%%",
-            index + 1,
-            minimum,
-            maximum,
-        )
+            ?: return@map ""
+        if (result.optString("moveCategory") == "Status") return@map ""
+        formatTierDamage(result)
     }
 }
+
+/**
+ * 三档伤害压缩成一行：① HP+2 / ② HP+32 / ③ HP+32+防御项32+性格1.1（物理招取防御档、特殊招取特防档）。
+ * 百分比区间取整，方便贴在招式左侧的小红框里。
+ */
+internal fun formatTierDamage(moveResult: JSONObject): String {
+    val ranges = moveResult.optJSONArray("profileRanges") ?: return "?｜?｜?"
+    val byProfile = (0 until ranges.length()).mapNotNull { index ->
+        ranges.optJSONObject(index)?.let { it.optString("defenderProfileId") to it.optJSONObject("damageRange") }
+    }.toMap()
+    val isSpecial = moveResult.optString("moveCategory") == "Special"
+    val thirdId = if (isSpecial) TIER_PROFILE_SPECIAL else TIER_PROFILE_PHYSICAL
+    val tiers = listOf(TIER_PROFILE_HP2, TIER_PROFILE_HP32, thirdId).map { id ->
+        byProfile[id]?.let { range ->
+            val min = range.optDouble("minPercent", Double.NaN)
+            val max = range.optDouble("maxPercent", Double.NaN)
+            if (!min.isFinite() || !max.isFinite()) "?" else "${formatPercentCompact(min)}-${formatPercentCompact(max)}"
+        } ?: "?"
+    }
+    return tiers.joinToString("｜") + "%"
+}
+
+private fun formatPercentCompact(value: Double): String =
+    if (value >= 10.0) value.roundToInt().toString() else String.format(Locale.US, "%.1f", value)
+
 
 private fun normalizeDirectId(value: String): String = value.lowercase().replace(Regex("[^a-z0-9]+"), "")
 
@@ -357,7 +385,7 @@ internal data class BattleDirectHudModel(
     val selectedAssumptionId: String,
     val mode: BattleDirectHudMode = BattleDirectHudMode.TYPE_MATCHUP,
     val sessionReady: Boolean = true,
-    val damageValues: List<String> = listOf("1 …", "2 …", "3 …", "4 …"),
+    val damageValues: List<String> = listOf("", "", "", ""),
     val ownTeamRecognition: OwnTeamRecognitionHudState = OwnTeamRecognitionHudState(),
     val typeMatchups: List<BattleTypeMatchup> = emptyList(),
     val ownChangeOptions: Map<Int, List<BattleDirectHudChangeOption>> = emptyMap(),
@@ -456,16 +484,6 @@ internal class BattleDirectOverlayUi(
         removeWindows()
         val region = safeArea.currentRegion()
         prepareActiveLayout(region)
-        addWindow(
-            BattleDirectHudElement.REMATCH,
-            compactButton("再战", onRecognizeTeamPreview).apply {
-                contentDescription = "重新识别双方队伍"
-            },
-            region,
-            desiredWidth = dp(64),
-            desiredHeight = dp(30),
-            interactive = true,
-        )
         val toggleButton = compactButton(
             battleDirectHudToggleLabel(next.sessionReady, next.mode),
         ) {
@@ -534,13 +552,13 @@ internal class BattleDirectOverlayUi(
         if (!next.sessionReady) {
             addWindow(
                 BattleDirectHudElement.STATUS,
-                compactButton("请点击“再战”识别双方阵容", onRecognizeTeamPreview).apply {
-                    contentDescription = "尚无本局阵容，点击识别双方阵容"
+                compactButton("点悬浮球→按画面计算", {}).apply {
+                    contentDescription = "点悬浮球的「按画面计算（选招页）」开始本局计算"
                 },
                 region,
                 desiredWidth = dp(180),
                 desiredHeight = dp(34),
-                interactive = true,
+                interactive = false,
             )
             restoreWindowLayerOrder()
             return
@@ -602,14 +620,19 @@ internal class BattleDirectOverlayUi(
                 region,
             )
         }
-        addWindow(
-            BattleDirectHudElement.DAMAGE,
-            damageView(next.damageValues),
-            region,
-            desiredWidth = dp(300),
-            desiredHeight = dp(40),
-            interactive = false,
-        )
+        damageLabels = emptyList()
+        DAMAGE_ELEMENTS.forEachIndexed { index, element ->
+            val label = damageLabelView(next.damageValues.getOrNull(index).orEmpty())
+            damageLabels = damageLabels + label
+            addWindow(
+                element,
+                label,
+                region,
+                desiredWidth = dp(190),
+                desiredHeight = dp(30),
+                interactive = false,
+            )
+        }
         addWindow(
             BattleDirectHudElement.DETAIL,
             compactButton(BATTLE_DIRECT_HUD_FULL_PANEL_LABEL, onOpenDetails).apply {
@@ -691,7 +714,7 @@ internal class BattleDirectOverlayUi(
     }
 
     fun updateDamage(values: List<String>) {
-        val fixed = (values + listOf("1 —", "2 —", "3 —", "4 —")).take(4)
+        val fixed = (values + listOf("", "", "", "")).take(4)
         damageLabels.forEachIndexed { index, label -> label.text = fixed[index] }
         model = model?.copy(damageValues = fixed)
     }
@@ -1042,20 +1065,16 @@ internal class BattleDirectOverlayUi(
         contentDescription = type
     }
 
-    private fun damageView(values: List<String>): View = LinearLayout(context).apply {
-        orientation = LinearLayout.HORIZONTAL
-        gravity = Gravity.CENTER_VERTICAL
-        setPadding(dp(3), dp(3), dp(3), dp(3))
-        background = roundedBackground(BACKGROUND, BORDER, 8f)
-        damageLabels = (values + listOf("1 —", "2 —", "3 —", "4 —")).take(4).map { value ->
-            textView(value, bold = true, centered = true).also { label ->
-                label.background = roundedBackground(SURFACE, BORDER, 5f)
-                addView(label, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f).apply {
-                    marginStart = dp(1)
-                    marginEnd = dp(1)
-                })
-            }
-        }
+    private fun damageLabelView(value: String): TextView = TextView(context).apply {
+        text = value
+        textSize = 8.5f
+        gravity = Gravity.CENTER
+        maxLines = 1
+        ellipsize = android.text.TextUtils.TruncateAt.END
+        setTextColor(TEXT)
+        setTypeface(typeface, android.graphics.Typeface.BOLD)
+        setPadding(dp(3), dp(1), dp(3), dp(1))
+        background = roundedBackground(SURFACE, BORDER, 5f)
     }
 
     private fun compactButton(text: String, action: () -> Unit): Button = Button(context).apply {
@@ -1236,7 +1255,7 @@ internal class BattleDirectOverlayUi(
         element: BattleDirectHudElement,
         safeRegion: OverlayBounds,
     ): OverlayBounds {
-        if (element != BattleDirectHudElement.MATCHUP) return safeRegion
+        if (element != BattleDirectHudElement.MATCHUP && element !in DAMAGE_ELEMENTS) return safeRegion
         val bounds = windowManager.currentWindowMetrics.bounds
         return battleDirectGameViewport(OverlayBounds(bounds.left, bounds.top, bounds.right, bounds.bottom))
     }
@@ -1250,7 +1269,10 @@ internal class BattleDirectOverlayUi(
         val requested = when (element) {
             BattleDirectHudElement.MATCHUP -> dp(220) to dp(108)
             BattleDirectHudElement.SPEED -> dp(120) to dp(90)
-            BattleDirectHudElement.DAMAGE -> dp(180) to dp(36)
+            BattleDirectHudElement.DAMAGE_1,
+            BattleDirectHudElement.DAMAGE_2,
+            BattleDirectHudElement.DAMAGE_3,
+            BattleDirectHudElement.DAMAGE_4 -> dp(150) to dp(26)
             BattleDirectHudElement.OPPONENT_LEFT,
             BattleDirectHudElement.OPPONENT_RIGHT,
             BattleDirectHudElement.OWN_LEFT,

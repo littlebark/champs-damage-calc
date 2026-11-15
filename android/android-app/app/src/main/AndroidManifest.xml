@@ -34,5 +34,12 @@
             android:name=".OverlayCaptureService"
             android:exported="false"
             android:foregroundServiceType="mediaProjection" />
+        <receiver
+            android:name=".OcrDebugReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.crazylei12.pokemonchampionsassistant.DEBUG_OCR" />
+            </intent-filter>
+        </receiver>
     </application>
 </manifest>

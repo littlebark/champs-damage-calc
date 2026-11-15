@@ -30,6 +30,8 @@ import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.GridLayout
 import android.widget.HorizontalScrollView
+import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
 import android.widget.LinearLayout
 import android.widget.ListView
 import android.widget.ScrollView
@@ -166,6 +168,34 @@ internal class BattleOverlayController(
         directOverlay.updateOwnTeamRecognitionState(state)
     }
 
+    /**
+     * 把对战中“当前状态”页读到的能力值写回本局选中的那只宝可梦。
+     * 以最近一次记录为准，直接落到已保存队伍里，之后的对局也会复用。
+     */
+    fun recordOwnStats(actualStats: StatFields, statPoints: StatFields) {
+        val directContext = loadDirectHudContext() ?: return
+        val slot = directContext.session.calculation.ownSlot
+        val base = directContext.ownTeam.pokemon.getOrNull(slot) ?: run {
+            publish("当前选中的我方宝可梦无效，请先在 HUD 里选择")
+            return
+        }
+        val updated = base.copy(actualStats = actualStats, statPoints = statPoints)
+        runCatching { TeamRepository.updatePokemon(context, directContext.ownTeam.id, slot, updated) }
+            .onSuccess {
+                battleContextCache = null
+                directCalculationGeneration++
+                panelDamageCache.clear()
+                directDamageCache.clear()
+                publish("已记录 ${base.species.displayName} 的能力值，本次对局按最新数据计算")
+                showDirectHudEntry()
+            }
+            .onFailure { error ->
+                Log.e("BattleOverlay", "Could not record own stats", error)
+                publish("记录能力值失败，请重试")
+                showDirectHudEntry()
+            }
+    }
+
     fun showSetup() {
         onTeamRecognitionStarted()
         val preview = runCatching { sessionRepository.loadPreview() }.getOrElse {
@@ -176,14 +206,20 @@ internal class BattleOverlayController(
             publish("请先识别双方阵容")
             return
         }
-        val teams = runCatching { TeamRepository.load(context) }.getOrElse {
+        var teams = runCatching { TeamRepository.load(context) }.getOrElse {
             Log.e("BattleOverlay", "Could not load saved teams", it)
             publish("无法读取我的队伍，请返回 App 后重试")
             return
-        }.filter { it.pokemon.size == 6 && it.damageReady }
+        }.filter { it.pokemon.size == 6 }.map { team -> completeTeamDefaults(team) }
         if (teams.isEmpty()) {
-            publish("还没有可用于对局的完整队伍，请先录入 6 只宝可梦的特性、能力值和招式")
-            return
+            // 没录入队伍也不该挡住对局：按识别到的我方阵容生成一份默认队伍（0 加点、图鉴默认特性/招式）。
+            val fallback = buildDefaultOwnTeam(preview)
+            if (fallback == null) {
+                publish("识别不到我方阵容，请返回双方队伍预览页面重新识别")
+                return
+            }
+            teams = listOf(fallback)
+            publish("未找到已录入队伍，已按识别阵容生成默认队伍（0 加点），可继续对局")
         }
 
         dismissSetup()
@@ -429,6 +465,12 @@ internal class BattleOverlayController(
         if (directState.mode == BattleDirectHudMode.CALCULATION) scheduleDirectDamage(session, ownTeam)
     }
 
+    /** 收起红框 HUD，回到只有悬浮球的状态。 */
+    fun hideDirectHud() {
+        directOverlay.dismiss()
+        onOverlayVisible(false)
+    }
+
     fun revealDirectHud() {
         val directContext = loadDirectHudContext() ?: return
         val state = directContext.session.calculation
@@ -441,6 +483,93 @@ internal class BattleOverlayController(
             currentContext = directContext.copy(session = changed)
         }
         showDirectHud(currentContext)
+    }
+
+    /**
+     * 选招页一键计算：只用画面识别到的我方当前宝可梦、四个招式和对手，直接开 HUD，不需要先确认阵容。
+     */
+    fun startSnapshotSession(ownSpecies: EntityValue, moves: List<MoveValue>, opponent: EntityValue) {
+        val localizedOwn = presetRepository.localizeSpecies(ownSpecies)
+        val localizedOpponent = presetRepository.localizeSpecies(opponent)
+        val containingMoves = moves.take(4).ifEmpty {
+            presetRepository.learnableMovesFor(localizedOwn).filter { (it.basePower ?: 0) > 0 }.take(4)
+        }
+        val recorded = runCatching { TeamRepository.load(context) }.getOrNull().orEmpty()
+            .flatMap { it.pokemon }
+            .firstOrNull { normalizeSpecies(it.species.showdownId) == normalizeSpecies(localizedOwn.showdownId) }
+        val zero = StatFields(hp = "0", atk = "0", def = "0", spa = "0", spd = "0", spe = "0")
+        val config = recorded?.copy(moves = containingMoves) ?: PokemonConfig(
+            species = localizedOwn,
+            level = 50,
+            actualStats = presetRepository.statsFor(localizedOwn, zero, null),
+            statPoints = zero,
+            ability = presetRepository.abilitiesFor(localizedOwn).firstOrNull(),
+            item = null,
+            moves = containingMoves,
+        )
+        val name = "选招页 " + LocalDateTime.now().format(DateTimeFormatter.ofPattern("MM-dd HH:mm"))
+        val team = runCatching { TeamRepository.saveShowdownTeam(context, name, listOf(config)) }
+            .onFailure { Log.e("BattleOverlay", "Could not save snapshot team", it) }
+            .getOrNull() ?: run {
+            publish("无法建立临时队伍，请重试")
+            return
+        }
+        val session = BattleSession(
+            sessionId = "battle-${System.currentTimeMillis()}",
+            createdAt = java.time.Instant.now().toString(),
+            previewCapturedAt = "",
+            selectedOwnTeamId = team.id,
+            opponentTeam = listOf(localizedOpponent),
+            calculation = BattleCalculationState(battleType = "SINGLE", spread = false),
+        )
+        runCatching { sessionRepository.save(session) }.onFailure {
+            Log.e("BattleOverlay", "Could not save snapshot session", it)
+            publish("无法开始计算，请重试")
+            return
+        }
+        battleContextCache = null
+        panelDamageCache.clear()
+        directDamageCache.clear()
+        publish("按当前画面计算：${localizedOwn.displayName} 对 ${localizedOpponent.displayName}")
+        showDirectHud()
+    }
+
+    private fun normalizeSpecies(value: String): String =
+        value.lowercase().filter { it.isLetterOrDigit() }
+
+    /**
+     * 不识别双方阵容也能开局：用已录入的我方队伍 + 玩家选定的当前对手，直接建立对局并打开 HUD。
+     */
+    fun startQuickSession(ownTeamId: String?, opponent: EntityValue) {
+        val teams = runCatching { TeamRepository.load(context) }.getOrElse {
+            publish("无法读取我的队伍，请返回 App 后重试")
+            return
+        }.filter { it.pokemon.size == 6 }.map { completeTeamDefaults(it) }
+        if (teams.isEmpty()) {
+            publish("还没有录入我方队伍，请先在对局页录入或手动创建一支 6 只的队伍")
+            return
+        }
+        val team = teams.firstOrNull { it.id == ownTeamId } ?: teams.first()
+        val localized = presetRepository.localizeSpecies(opponent)
+        val session = BattleSession(
+            sessionId = "battle-${System.currentTimeMillis()}",
+            createdAt = java.time.Instant.now().toString(),
+            previewCapturedAt = "",
+            selectedOwnTeamId = team.id,
+            opponentTeam = listOf(localized),
+            calculation = BattleCalculationState(battleType = "SINGLE", spread = false),
+        )
+        runCatching { sessionRepository.save(session) }
+            .onFailure {
+                Log.e("BattleOverlay", "Could not save quick battle session", it)
+                publish("无法开始对局，请重试")
+                return
+            }
+        battleContextCache = null
+        panelDamageCache.clear()
+        directDamageCache.clear()
+        publish("快速对局已开始：我方 ${team.name}，对手 ${localized.displayName}（对方按三档估算）")
+        showDirectHud()
     }
 
     fun showDirectHudEntry(revealHiddenHud: Boolean = true) {
@@ -486,7 +615,9 @@ internal class BattleOverlayController(
             Log.e("BattleOverlay", "Could not load teams for direct HUD", it)
             publish("无法读取我的队伍，请返回 App 后重试")
             return null
-        }.filter { it.pokemon.size == 6 && it.damageReady }
+        }.filter { it.pokemon.isNotEmpty() }
+            .map { team -> completeTeamDefaults(team) }
+            .filter { it.damageReady }
         if (teams.isEmpty()) {
             discardStaleSession()
             return null
@@ -768,6 +899,7 @@ internal class BattleOverlayController(
             emptyList(),
             presetRepository,
             allOwnMoves = true,
+            tierDefenderProfile = true,
         )
         return PreparedDirectDamage(request, configuredMoves, battleDamageCacheKey(request))
     }
@@ -781,16 +913,16 @@ internal class BattleOverlayController(
         if (!runtime.isReady) {
             handler.postDelayed({
                 if (generation != directCalculationGeneration || !directOverlay.isCalculationShown) return@postDelayed
-                directOverlay.updateDamage(List(4) { index -> "${index + 1} …" })
+                directOverlay.updateDamage(List(4) { "" })
                 if (retry < 12) scheduleDirectDamage(session, ownTeam, retry + 1, generation)
-                else directOverlay.updateDamage(List(4) { index -> "${index + 1} ?" })
+                else directOverlay.updateDamage(List(4) { "" })
             }, if (retry == 0) 100 else 350)
             return
         }
 
         val prepared = runCatching { prepareDirectDamage(session, ownTeam) }.getOrElse {
             Log.e("BattleOverlay", "Could not prepare direct HUD damage", it)
-            directOverlay.updateDamage(List(4) { index -> "${index + 1} ?" })
+            directOverlay.updateDamage(List(4) { "" })
             return
         }
         directDamageCache[prepared.cacheKey]?.let { cached ->
@@ -811,12 +943,12 @@ internal class BattleOverlayController(
                             }
                             .onFailure {
                                 Log.e("BattleOverlay", "Could not parse direct HUD damage", it)
-                                directOverlay.updateDamage(List(4) { index -> "${index + 1} ?" })
+                                directOverlay.updateDamage(List(4) { "" })
                             }
                     },
                     onFailure = {
                         Log.e("BattleOverlay", "Direct HUD damage calculation failed", it)
-                        directOverlay.updateDamage(List(4) { index -> "${index + 1} ?" })
+                        directOverlay.updateDamage(List(4) { "" })
                     },
                 )
             }
@@ -2502,6 +2634,65 @@ internal class BattleOverlayController(
                 speedLine = state.speedLine.copy(ownPokemon = emptyMap()),
             ),
         )
+    }
+
+    /** 缺什么补什么：特性、招式、六项实际能力值都按图鉴默认补齐，尽量让队伍可用于计算。 */
+    private fun completeTeamDefaults(team: SavedTeam): SavedTeam {
+        var changed = false
+        val pokemon = team.pokemon.map { config ->
+            val completed = completeConfigDefaults(config)
+            if (completed != config) changed = true
+            completed
+        }
+        return if (!changed) {
+            team
+        } else {
+            team.copy(
+                pokemon = pokemon,
+                damageReady = pokemon.all { it.isDamageReady() },
+                readinessIssues = pokemon.flatMap { it.damageReadinessIssues() }.distinct(),
+            )
+        }
+    }
+
+    private fun completeConfigDefaults(config: PokemonConfig): PokemonConfig {
+        val ability = config.ability ?: presetRepository.abilitiesFor(config.species).firstOrNull()
+        val moves = if (config.moves.isEmpty()) {
+            presetRepository.learnableMovesFor(config.species).filter { (it.basePower ?: 0) > 0 }.take(4)
+        } else {
+            config.moves
+        }
+        val actualStats = if (config.hasCompleteActualStats()) {
+            config.actualStats
+        } else {
+            presetRepository.statsFor(config.species, config.statPoints, config.statAlignment)
+        }
+        return config.copy(ability = ability, moves = moves, actualStats = actualStats)
+    }
+
+    /** 没有已保存队伍时，按识别到的我方阵容造一份默认队伍（0 加点、图鉴默认特性与招式）。 */
+    private fun buildDefaultOwnTeam(preview: TeamPreviewDraft): SavedTeam? {
+        val species = preview.ownSlots
+            .sortedBy { it.slotIndex }
+            .mapNotNull { slot -> slot.candidates.firstOrNull()?.entity }
+        if (species.size != 6) return null
+        val zero = StatFields(hp = "0", atk = "0", def = "0", spa = "0", spd = "0", spe = "0")
+        val pokemon = species.map { entity ->
+            val localized = presetRepository.localizeSpecies(entity)
+            PokemonConfig(
+                species = localized,
+                level = 50,
+                actualStats = presetRepository.statsFor(localized, zero, null),
+                statPoints = zero,
+                ability = presetRepository.abilitiesFor(localized).firstOrNull(),
+                item = null,
+                moves = presetRepository.learnableMovesFor(localized).filter { (it.basePower ?: 0) > 0 }.take(4),
+            )
+        }
+        val name = "对局默认队伍 " + LocalDateTime.now().format(DateTimeFormatter.ofPattern("MM-dd HH:mm"))
+        return runCatching { TeamRepository.saveShowdownTeam(context, name, pokemon) }
+            .onFailure { Log.e("BattleOverlay", "Could not create default own team", it) }
+            .getOrNull()
     }
 
     private fun matchCount(team: SavedTeam, preview: TeamPreviewDraft): Int {

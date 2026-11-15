@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
@@ -72,6 +73,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -145,18 +147,20 @@ private val AppColors = darkColorScheme(
 )
 
 private enum class AppTab(val label: String, val glyph: String) {
-    HOME("首页", "⌂"),
-    MANUAL("计算", "⚔"),
+    CALC("计算器", "⚔"),
+    DEX("图鉴", "◈"),
+    TEAM("队伍", "☰"),
     BATTLE("对局", "◉"),
     SETTINGS("设置", "⚙"),
 }
 
 @Composable
 private fun ChampionsDamageApp(runtime: DamageEngineRuntime, activity: MainActivity) {
-    var selectedTabName by rememberSaveable { mutableStateOf(AppTab.HOME.name) }
+    var selectedTabName by rememberSaveable { mutableStateOf(AppTab.CALC.name) }
     var preferredOwnTeamId by rememberSaveable { mutableStateOf<String?>(null) }
     val selectedTab = AppTab.valueOf(selectedTabName)
     val context = LocalContext.current
+    val presetRepository = remember(context) { OpponentPresetRepository(context) }
     val teamLibraryRevision by CaptureUiState.teamLibraryRevision
     val teamsResult = remember(teamLibraryRevision) { runCatching { TeamRepository.load(context) } }
 
@@ -184,12 +188,13 @@ private fun ChampionsDamageApp(runtime: DamageEngineRuntime, activity: MainActiv
                     teamsResult.fold(
                         onSuccess = { teams ->
                             when (selectedTab) {
-                                AppTab.HOME -> HomeScreen(teams, runtime) { teamId ->
+                                AppTab.CALC -> ManualCalculatorScreen(teams, runtime, preferredOwnTeamId, presetRepository)
+                                AppTab.DEX -> PokedexScreen(repository = presetRepository)
+                                AppTab.TEAM -> HomeScreen(teams, runtime) { teamId ->
                                     preferredOwnTeamId = teamId
-                                    selectedTabName = AppTab.MANUAL.name
+                                    selectedTabName = AppTab.CALC.name
                                 }
-                                AppTab.MANUAL -> ManualCalculatorScreen(teams, runtime, preferredOwnTeamId)
-                                AppTab.BATTLE -> OwnTeamCaptureScreen(activity)
+                                AppTab.BATTLE -> OwnTeamCaptureScreen(activity, teams, presetRepository)
                                 AppTab.SETTINGS -> SettingsScreen(runtime, teams)
                             }
                         },
@@ -202,7 +207,11 @@ private fun ChampionsDamageApp(runtime: DamageEngineRuntime, activity: MainActiv
 }
 
 @Composable
-private fun OwnTeamCaptureScreen(activity: MainActivity) {
+private fun OwnTeamCaptureScreen(
+    activity: MainActivity,
+    teams: List<SavedTeam>,
+    presetRepository: OpponentPresetRepository,
+) {
     val message by CaptureUiState.message
     val running by CaptureUiState.running
     val draftRevision by CaptureUiState.ownTeamDraftRevision
@@ -210,6 +219,22 @@ private fun OwnTeamCaptureScreen(activity: MainActivity) {
         OwnTeamImportRepository(activity).hasCorrectionDraft()
     }
     val overlayAllowed = Settings.canDrawOverlays(activity)
+    var quickTeamId by rememberSaveable { mutableStateOf<String?>(null) }
+    var opponentQuery by remember { mutableStateOf("") }
+    var opponent by remember { mutableStateOf<EntityValue?>(null) }
+    val opponents = remember(opponentQuery) {
+        val query = opponentQuery.trim()
+        if (query.isEmpty()) {
+            emptyList()
+        } else {
+            presetRepository.speciesCatalog
+                .filter {
+                    it.displayName.contains(query, ignoreCase = true) ||
+                        it.showdownId.contains(query, ignoreCase = true)
+                }
+                .take(8)
+        }
+    }
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
@@ -217,42 +242,81 @@ private fun OwnTeamCaptureScreen(activity: MainActivity) {
         Text("对局助手", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
         StatusCard(message, running)
         SectionCard("1. 启动对局助手") {
-            Text("首次使用需要允许 App 显示对局悬浮界面，并按系统提示共享 Pokémon Champions 的画面。")
+            Text("对局助手只需要两项系统授权：悬浮窗权限（长期有效）和“共享屏幕”（每次启动时由系统确认一次）。")
             Text(if (overlayAllowed) "悬浮窗权限：已授予" else "悬浮窗权限：尚未授予")
             if (!overlayAllowed) {
                 Button(onClick = activity::requestOverlayPermission) { Text("授予悬浮窗权限") }
             }
             Button(onClick = { activity.startOwnTeamCapture() }, enabled = !running) {
-                Text("启动对局助手")
-            }
-            Button(
-                onClick = { activity.startOwnTeamCapture(BattleAssistantMode.HUD) },
-                enabled = !running,
-            ) {
-                Text("启动对局助手（HUD版）")
+                Text(if (running) "对局助手运行中" else "启动对局助手（悬浮球）")
             }
             OutlinedButton(onClick = { OverlayCaptureService.stop(activity) }, enabled = running) {
                 Text("结束对局助手")
             }
-            Text("普通模式使用悬浮按钮；HUD版启动后直接打开原位 HUD，全程不会创建悬浮按钮。")
+            Text("启动后悬浮球常驻在游戏画面上，直到你手动结束或系统清理后台。红框 HUD 可在悬浮球菜单里选择「显示对战 HUD」打开。")
         }
-        SectionCard("2. 在游戏中识别") {
-            Text("启动后打开 Pokémon Champions：普通模式点击悬浮按钮；HUD版直接使用屏幕上的 HUD 工具栏。")
-            Text("先进入队伍信息页（入口比较隐蔽）：在游戏主页依次点击“对战”→“级别对战”，再按本局格式进入“单打对战”或“双打对战”。")
-            Text("在准备匹配的页面点击当前使用的“队伍X”卡片；队伍列表打开后，再点击该队伍顶部的“队伍X”，最后在弹出菜单中点击“对战队伍信息”。不需要开始匹配。")
-            Text("录入我的队伍：先停留在“能力”页（显示特性、道具和招式），普通模式选择“录入我的队伍”，HUD版点击“识别我方”；然后切换到“状态”页（显示 HP、攻击等能力值），再识别一次。两次必须是同一支队伍。")
-            Text("开始一场对局：返回准备匹配页面并开始匹配；双方队伍预览一出现，普通模式选择“识别双方阵容”，HUD版点击“再战”。完成阵容识别和核对后，再选择并确认己方出战宝可梦。必须在确认出战前识别；确认后游戏界面会变化，届时将无法识别双方阵容。")
-            Text("识别时请让目标页面完整显示；读取画面时当前模式的悬浮入口会暂时移除。")
-        }
-        SectionCard("3. 核对与保存") {
-            Text("我的队伍会在核对后保存到本机，可在首页查看、编辑或用于自由计算。")
-            if (hasCorrectionDraft) {
-                Button(onClick = { OverlayCaptureService.requestOwnTeamCorrection(activity) }) {
-                    Text("继续核对我的队伍")
+        SectionCard("2. 快速开始（不用识别双方阵容）") {
+            Text("对局中只要能看到对手是谁，就能直接开 HUD：选我方队伍 + 选当前对手，对方加点按三档估算。")
+            Text("适合临时开一局、或懒得走阵容识别的情况。")
+            if (teams.isEmpty()) {
+                Text("还没有我方队伍：可以先用上面的「录入我的队伍」，或在「队伍」页手动建一支。")
+            } else {
+                Text("我方队伍")
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    teams.forEach { team ->
+                        val selected = (quickTeamId ?: teams.first().id) == team.id
+                        FilterChip(
+                            selected = selected,
+                            onClick = { quickTeamId = team.id },
+                            label = { Text(team.name) },
+                        )
+                    }
+                }
+                OutlinedTextField(
+                    value = opponentQuery,
+                    onValueChange = {
+                        opponentQuery = it
+                        opponent = null
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("搜索对手宝可梦（中文或英文）") },
+                    singleLine = true,
+                )
+                opponents.forEach { candidate ->
+                    TextButton(onClick = { opponent = candidate }) {
+                        Text("选择 ${candidate.displayName}（${candidate.showdownId}）")
+                    }
+                }
+                opponent?.let { chosen ->
+                    Text("当前对手：${chosen.displayName}", fontWeight = FontWeight.Bold)
+                    Button(
+                        onClick = {
+                            OverlayCaptureService.startQuickSession(
+                                activity,
+                                quickTeamId ?: teams.first().id,
+                                chosen,
+                            )
+                        },
+                        enabled = running,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text(if (running) "用这只对手开始对局" else "请先启动对局助手")
+                    }
                 }
             }
+        }
+        SectionCard("3. 在游戏中识别") {
+            Text("启动后打开 Pokémon Champions，点击悬浮球使用各项功能。")
+            Text("先进入队伍信息页（入口比较隐蔽）：在游戏主页依次点击“对战”→“级别对战”，再按本局格式进入“单打对战”或“双打对战”。")
+            Text("在准备匹配的页面点击当前使用的“队伍X”卡片；队伍列表打开后，再点击该队伍顶部的“队伍X”，最后在弹出菜单中点击“对战队伍信息”。不需要开始匹配。")
+            Text("录入我的队伍：队伍页或单只状态页都能录，一页也能直接存；两页都录（能力值 + 招式与道具）会更精确。全程不弹窗。")
+            Text("对局中也可以单独补录：打开某只宝可梦的“状态”页，用悬浮球菜单里的“记录当前宝可梦能力值”，以最近一次记录为准。")
+            Text("开始一场对局：返回准备匹配页面并开始匹配；双方队伍预览一出现，选择“识别双方阵容”。必须在确认出战前识别。")
+        }
+        SectionCard("3. 数据保存") {
+            Text("录入的队伍会自动保存到本机，可在首页和「队伍」页查看、编辑或用于自由计算。")
             Text("双方阵容只用于当前对局；重新识别会开始新对局，并清除上一局的临时状态。")
-            Text("识别结果需要核对确认后才会用于伤害计算；识别不准确的内容可以手动修改。")
+            Text("能力值以最近一次记录为准：先整队录入，之后对局中单独记录的某只宝可梦会覆盖它的旧数据。")
         }
         OutlinedCard(Modifier.fillMaxWidth()) {
             Text(
@@ -1214,6 +1278,26 @@ private data class CalculationUiResult(
     val warnings: List<String>,
 )
 
+private data class TierCalculationUiResult(
+    val attacker: String,
+    val defender: String,
+    val moves: List<TierMoveResultUi>,
+    val warnings: List<String>,
+)
+
+private data class TierMoveResultUi(
+    val name: String,
+    val category: String,
+    val tiers: List<TierRangeUi>,
+)
+
+private data class TierRangeUi(
+    val minPercent: Double,
+    val maxPercent: Double,
+    val minDamage: Int,
+    val maxDamage: Int,
+)
+
 private data class MoveResultUi(
     val name: String,
     val minPercent: Double,
@@ -1241,259 +1325,290 @@ private fun ManualCalculatorScreen(
     teams: List<SavedTeam>,
     runtime: DamageEngineRuntime,
     preferredOwnTeamId: String?,
+    repository: OpponentPresetRepository,
 ) {
-    val context = LocalContext.current
-    val repository = remember(context) { OpponentPresetRepository(context) }
     val catalog = repository.speciesCatalog
-    val preferredTeam = teams.firstOrNull { it.id == preferredOwnTeamId }
-    val initialOwnTeam = preferredTeam ?: teams.firstOrNull()
-    val initialOwnConfig = initialOwnTeam?.pokemon?.firstOrNull()
-        ?: repository.configFor(catalog.firstOrNull { it.showdownId == "Pikachu" } ?: catalog.first())
-    val initialOpponentSpecies = catalog.firstOrNull {
-        it.showdownId == "Armarouge" && it.showdownId != initialOwnConfig.species.showdownId
-    } ?: catalog.firstOrNull {
-        it.showdownId != initialOwnConfig.species.showdownId
-    } ?: catalog.first()
-    val initialOpponentProfile = repository.recommendedProfile(initialOpponentSpecies)
-    var direction by rememberSaveable { mutableStateOf("OWN_TO_OPPONENT") }
+
+    fun defaultState(species: EntityValue, label: String = "图鉴默认（0 加点）"): CalculatorPokemonState {
+        val profile = repository.profilesFor(species).firstOrNull { it.profileId == "generated.default" }
+            ?: repository.recommendedProfile(species)
+        return CalculatorPokemonState(repository.configFor(species, profile), label, profile.profileId)
+    }
+
+    fun pickSpecies(id: String): EntityValue = catalog.firstOrNull { it.showdownId == id } ?: catalog.first()
+
+    val initialOwnConfig = teams.firstOrNull { it.id == preferredOwnTeamId }?.pokemon?.firstOrNull()
+        ?: teams.firstOrNull()?.pokemon?.firstOrNull()
     var ownSelection by remember {
         mutableStateOf(
-            CalculatorPokemonState(
-                config = initialOwnConfig,
-                sourceLabel = initialOwnTeam?.let { "已保存队伍：${it.name}" } ?: "图鉴配置假设",
-                profileId = if (initialOwnTeam == null) repository.recommendedProfile(initialOwnConfig.species).profileId else null,
-            )
+            initialOwnConfig?.let { CalculatorPokemonState(it, "已保存队伍") } ?: defaultState(pickSpecies("Pikachu"))
         )
     }
-    var opponentSelection by remember {
-        mutableStateOf(
-            CalculatorPokemonState(
-                config = repository.configFor(initialOpponentSpecies, initialOpponentProfile),
-                sourceLabel = "图鉴配置假设",
-                profileId = initialOpponentProfile.profileId,
-            )
-        )
-    }
+    var opponentSelection by remember { mutableStateOf(defaultState(pickSpecies("Armarouge"))) }
     var selectedMove by rememberSaveable { mutableStateOf("") }
-    var moveSortModeName by rememberSaveable { mutableStateOf(MoveSortMode.PINYIN.name) }
     var battleType by rememberSaveable { mutableStateOf("SINGLE") }
-    var weather by rememberSaveable { mutableStateOf("NONE") }
-    var terrain by rememberSaveable { mutableStateOf("NONE") }
-    var ownReflect by rememberSaveable { mutableStateOf(false) }
-    var ownLightScreen by rememberSaveable { mutableStateOf(false) }
+    var weather by rememberSaveable { mutableStateOf("") }
+    var terrain by rememberSaveable { mutableStateOf("") }
     var opponentReflect by rememberSaveable { mutableStateOf(false) }
     var opponentLightScreen by rememberSaveable { mutableStateOf(false) }
-    var critical by rememberSaveable { mutableStateOf(false) }
-    var spread by rememberSaveable { mutableStateOf(false) }
-    var showConditions by rememberSaveable { mutableStateOf(false) }
+    var attackerPoints by rememberSaveable { mutableStateOf(0) }
+    var attackerStage by rememberSaveable { mutableStateOf(0) }
+    var attackerNature by rememberSaveable { mutableStateOf(1.0) }
+    var defenderHpPoints by rememberSaveable { mutableStateOf(0) }
+    var defenderPoints by rememberSaveable { mutableStateOf(0) }
+    var defenderStage by rememberSaveable { mutableStateOf(0) }
+    var defenderNature by rememberSaveable { mutableStateOf(1.0) }
+    var speedPoints by rememberSaveable { mutableStateOf(0) }
     var calculating by remember { mutableStateOf(false) }
     var result by remember { mutableStateOf<CalculationUiResult?>(null) }
     var errorMessage by remember { mutableStateOf("") }
 
     LaunchedEffect(preferredOwnTeamId, teams.map(SavedTeam::id)) {
-        teams.firstOrNull { it.id == preferredOwnTeamId }?.pokemon?.firstOrNull()?.let { config ->
-            ownSelection = CalculatorPokemonState(
-                config = config,
-                sourceLabel = "已保存队伍：${teams.first { it.id == preferredOwnTeamId }.name}",
+        val team = teams.firstOrNull { it.id == preferredOwnTeamId } ?: return@LaunchedEffect
+        team.pokemon.firstOrNull()?.let { ownSelection = CalculatorPokemonState(it, "已保存队伍") }
+    }
+
+    val learnableMoves = remember(ownSelection.config.species.showdownId) {
+        repository.learnableMovesFor(ownSelection.config.species)
+    }
+    LaunchedEffect(learnableMoves.map { it.entity.showdownId }) {
+        if (learnableMoves.none { it.entity.showdownId == selectedMove }) {
+            selectedMove = learnableMoves.firstOrNull { (it.basePower ?: 0) > 0 }?.entity?.showdownId
+                ?: learnableMoves.firstOrNull()?.entity?.showdownId.orEmpty()
+        }
+    }
+
+    val move = learnableMoves.firstOrNull { it.entity.showdownId == selectedMove }
+    val isSpecial = move?.category == "Special"
+    val offenseStat = if (isSpecial) "spa" else "atk"
+    val defenseStat = if (isSpecial) "spd" else "def"
+    val needsSpeed = move?.entity?.showdownId == "ElectroBall"
+    val needsGender = ownSelection.config.ability?.showdownId == "Rivalry"
+
+    fun ownConfig(): PokemonConfig {
+        val points = if (isSpecial) StatFields(spa = attackerPoints.toString()) else StatFields(atk = attackerPoints.toString())
+        val stats = repository.statsWithNatureMultiplier(
+            ownSelection.config.species,
+            points,
+            offenseStat,
+            attackerNature,
+        )
+        return ownSelection.config.copy(statPoints = points, actualStats = stats, statAlignment = null)
+    }
+
+    fun opponentConfig(): PokemonConfig {
+        val points = if (isSpecial) {
+            StatFields(hp = defenderHpPoints.toString(), spd = defenderPoints.toString())
+        } else {
+            StatFields(hp = defenderHpPoints.toString(), def = defenderPoints.toString())
+        }
+        val stats = repository.statsWithNatureMultiplier(
+            opponentSelection.config.species,
+            points,
+            defenseStat,
+            defenderNature,
+        )
+        return opponentSelection.config.copy(statPoints = points, actualStats = stats, statAlignment = null)
+    }
+
+    fun recalculate() {
+        if (selectedMove.isBlank() || !runtime.status.contains("已就绪")) return
+        calculating = true
+        errorMessage = ""
+        val request = buildDamageRequest(
+            direction = "OWN_TO_OPPONENT",
+            own = PokemonEditorState.from(ownConfig()),
+            opponent = PokemonEditorState.from(opponentConfig()),
+            selectedMove = selectedMove,
+            battleType = battleType,
+            weather = weather,
+            terrain = terrain,
+            ownReflect = false,
+            ownLightScreen = false,
+            opponentReflect = opponentReflect,
+            opponentLightScreen = opponentLightScreen,
+            critical = false,
+            spread = false,
+            tierProfiles = false,
+            attackerStages = mapOf(offenseStat to attackerStage),
+            defenderStages = mapOf(defenseStat to defenderStage),
+        )
+        runtime.calculate(request) { calculation ->
+            calculating = false
+            calculation.fold(
+                onSuccess = { raw ->
+                    runCatching { result = parseCalculation(raw) }
+                        .onFailure { errorMessage = localizeEngineError(it.message) }
+                },
+                onFailure = { errorMessage = localizeEngineError(it.message) },
             )
         }
     }
 
-    val moveOptions = if (direction == "OWN_TO_OPPONENT") {
-        ownSelection.config.moves
-    } else {
-        opponentSelection.config.moves
+    val signature = buildString {
+        append(ownSelection.config.toString()).append(opponentSelection.config.toString())
+        append('|').append(selectedMove).append(battleType)
+        append('|').append(weather).append(terrain).append(opponentReflect).append(opponentLightScreen)
+        append('|').append(attackerPoints).append(attackerStage).append(attackerNature)
+        append('|').append(defenderHpPoints).append(defenderPoints).append(defenderStage).append(defenderNature)
+        append('|').append(speedPoints)
     }
-    val moveSortMode = MoveSortMode.valueOf(moveSortModeName)
-    val sortedMoveOptions = remember(moveOptions, moveSortMode) {
-        sortMoves(moveOptions, moveSortMode, repository::moveTypeFor)
-    }
-    LaunchedEffect(direction, moveOptions.map { it.entity.showdownId }) {
-        selectedMove = moveOptions.firstOrNull {
-            it.entity.showdownId.equals(selectedMove, ignoreCase = true)
-        }?.entity?.showdownId ?: moveOptions.firstOrNull { (it.basePower ?: 0) > 0 }?.entity?.showdownId
-            ?: moveOptions.firstOrNull()?.entity?.showdownId.orEmpty()
+    LaunchedEffect(signature) {
+        kotlinx.coroutines.delay(300)
+        recalculate()
     }
 
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Text("自由伤害计算", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-        Text("无需先建立两支队伍，可从完整图鉴自由选择双方宝可梦。", color = MaterialTheme.colorScheme.primary)
-        StatusCard(runtime.status, runtime.status.contains("已就绪"))
-
-        SectionCard("计算方向") {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                FilterChip(
-                    selected = direction == "OWN_TO_OPPONENT",
-                    onClick = { direction = "OWN_TO_OPPONENT" },
-                    label = { Text("我方输出") },
-                )
-                FilterChip(
-                    selected = direction == "OPPONENT_TO_OWN",
-                    onClick = { direction = "OPPONENT_TO_OWN" },
-                    label = { Text("我方承伤") },
-                )
-            }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            FilterChip(selected = battleType == "SINGLE", onClick = { battleType = "SINGLE" }, label = { Text("单打") })
+            FilterChip(selected = battleType == "DOUBLE", onClick = { battleType = "DOUBLE" }, label = { Text("双打") })
+            TextButton(onClick = {
+                val previousOwn = ownSelection
+                ownSelection = opponentSelection
+                opponentSelection = previousOwn
+                val previousPoints = attackerPoints
+                attackerPoints = defenderPoints
+                defenderPoints = previousPoints
+                selectedMove = ""
+            }) { Text("攻守互换") }
         }
 
-        BoxWithConstraints(Modifier.fillMaxWidth()) {
-            if (maxWidth >= 720.dp) {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    CalculatorPokemonCard(
-                        title = "我方宝可梦",
-                        state = ownSelection,
-                        teams = teams,
-                        repository = repository,
-                        modifier = Modifier.weight(1f),
-                        onChange = { ownSelection = it },
-                    )
-                    CalculatorPokemonCard(
-                        title = "对方宝可梦",
-                        state = opponentSelection,
-                        teams = teams,
-                        repository = repository,
-                        modifier = Modifier.weight(1f),
-                        onChange = { opponentSelection = it },
-                    )
-                }
-            } else {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    CalculatorPokemonCard("我方宝可梦", ownSelection, teams, repository, Modifier.fillMaxWidth()) {
-                        ownSelection = it
-                    }
-                    CalculatorPokemonCard("对方宝可梦", opponentSelection, teams, repository, Modifier.fillMaxWidth()) {
-                        opponentSelection = it
-                    }
-                }
-            }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            CompactPicker(
+                label = "天气",
+                options = listOf("" to "无", "Sun" to "晴天", "Rain" to "雨天", "Sand" to "沙暴", "Snow" to "雪天"),
+                selected = weather,
+                modifier = Modifier.weight(1f),
+                onSelect = { weather = it },
+            )
+            CompactPicker(
+                label = "场地",
+                options = listOf(
+                    "" to "无",
+                    "Electric" to "电气",
+                    "Grassy" to "青草",
+                    "Psychic" to "精神",
+                    "Misty" to "薄雾",
+                ),
+                selected = terrain,
+                modifier = Modifier.weight(1f),
+                onSelect = { terrain = it },
+            )
         }
 
-        SectionCard("招式与战场条件") {
-            if (moveOptions.isEmpty()) {
-                Text("当前攻击方还没有招式，请在宝可梦卡片的“详细调整”中添加。", color = Color(0xFFFFB74D))
-            } else {
-                MoveSortSelector(moveSortMode) { moveSortModeName = it.name }
-                SimplePicker(
-                    label = if (direction == "OWN_TO_OPPONENT") "我方招式" else "对方招式",
-                    options = sortedMoveOptions.map { it.entity.showdownId },
-                    selected = selectedMove,
-                    display = { id ->
-                        moveOptions.firstOrNull { it.entity.showdownId == id }
-                            ?.let { "[${repository.moveTypeLabel(it)}] ${it.entity.displayName}" }
-                            ?: "未选择"
-                    },
-                    onSelect = { selectedMove = it },
-                )
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                FilterChip(
-                    selected = battleType == "SINGLE",
-                    onClick = {
-                        battleType = "SINGLE"
-                        spread = false
-                    },
-                    label = { Text("单打") },
-                )
-                FilterChip(
-                    selected = battleType == "DOUBLE",
-                    onClick = {
-                        battleType = "DOUBLE"
-                        spread = true
-                    },
-                    label = { Text("双打") },
-                )
-            }
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Box(Modifier.weight(1f)) {
-                    SimplePicker("天气", listOf("NONE", "Sun", "Rain", "Sand", "Snow"), weather, ::weatherLabel) {
-                        weather = it
-                    }
-                }
-                Box(Modifier.weight(1f)) {
-                    SimplePicker(
-                        "场地",
-                        listOf("NONE", "Electric", "Grassy", "Psychic", "Misty"),
-                        terrain,
-                        ::terrainLabel,
-                    ) { terrain = it }
-                }
-            }
-            TextButton(onClick = { showConditions = !showConditions }) {
-                Text(if (showConditions) "收起高级条件" else "能力 / 墙 / 状态")
-            }
-            if (showConditions) {
-                CheckRow("我方反射壁", ownReflect) { ownReflect = it }
-                CheckRow("我方光墙", ownLightScreen) { ownLightScreen = it }
-                CheckRow("对方反射壁", opponentReflect) { opponentReflect = it }
-                CheckRow("对方光墙", opponentLightScreen) { opponentLightScreen = it }
-                CheckRow("会心", critical) { critical = it }
-                CheckRow("按双打范围招式修正", spread) { spread = it && battleType == "DOUBLE" }
-            }
-        }
+        CalculatorSideCard(
+            title = "攻击方",
+            state = ownSelection,
+            repository = repository,
+            isAttacker = true,
+            learnableMoves = learnableMoves,
+            selectedMove = selectedMove,
+            onSelectMove = { selectedMove = it },
+            statLabel = if (isSpecial) "特攻" else "攻击",
+            primaryPoints = attackerPoints,
+            onPrimaryPoints = { attackerPoints = it },
+            stage = attackerStage,
+            onStageChange = { attackerStage = it },
+            nature = attackerNature,
+            onNatureChange = { attackerNature = it },
+            showHpPoints = false,
+            hpPoints = 0,
+            onHpPoints = {},
+            showSpeedPoints = needsSpeed,
+            speedPoints = speedPoints,
+            onSpeedPoints = { speedPoints = it },
+            showGender = needsGender,
+            showScreens = false,
+            reflect = false,
+            onReflect = {},
+            lightScreen = false,
+            onLightScreen = {},
+            onStateChange = { ownSelection = it },
+        )
 
-        Button(
-            modifier = Modifier.fillMaxWidth().height(52.dp),
-            enabled = runtime.status.contains("已就绪") && !calculating && selectedMove.isNotBlank(),
-            onClick = {
-                errorMessage = ""
-                result = null
-                calculating = true
-                val request = buildDamageRequest(
-                    direction = direction,
-                    own = PokemonEditorState.from(ownSelection.config),
-                    opponent = PokemonEditorState.from(opponentSelection.config),
-                    selectedMove = selectedMove,
-                    battleType = battleType,
-                    weather = weather,
-                    terrain = terrain,
-                    ownReflect = ownReflect,
-                    ownLightScreen = ownLightScreen,
-                    opponentReflect = opponentReflect,
-                    opponentLightScreen = opponentLightScreen,
-                    critical = critical,
-                    spread = spread && battleType == "DOUBLE",
-                )
-                runtime.calculate(request) { calculation ->
-                    calculating = false
-                    calculation.fold(
-                        onSuccess = { raw ->
-                            runCatching { parseCalculation(raw) }
-                                .onSuccess { result = it }
-                                .onFailure { errorMessage = localizeEngineError(it.message) }
-                        },
-                        onFailure = { errorMessage = localizeEngineError(it.message) },
-                    )
-                }
-            },
-        ) { Text(if (calculating) "计算中…" else "计算伤害") }
+        CalculatorSideCard(
+            title = "防御方",
+            state = opponentSelection,
+            repository = repository,
+            isAttacker = false,
+            learnableMoves = emptyList(),
+            selectedMove = "",
+            onSelectMove = {},
+            statLabel = if (isSpecial) "特防" else "防御",
+            primaryPoints = defenderPoints,
+            onPrimaryPoints = { defenderPoints = it },
+            stage = defenderStage,
+            onStageChange = { defenderStage = it },
+            nature = defenderNature,
+            onNatureChange = { defenderNature = it },
+            showHpPoints = true,
+            hpPoints = defenderHpPoints,
+            onHpPoints = { defenderHpPoints = it },
+            showSpeedPoints = needsSpeed,
+            speedPoints = speedPoints,
+            onSpeedPoints = { speedPoints = it },
+            showGender = false,
+            showScreens = true,
+            reflect = opponentReflect,
+            onReflect = { opponentReflect = it },
+            lightScreen = opponentLightScreen,
+            onLightScreen = { opponentLightScreen = it },
+            onStateChange = { opponentSelection = it },
+        )
 
         if (errorMessage.isNotBlank()) {
             Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF5B2525))) {
                 Text(errorMessage, Modifier.padding(14.dp))
             }
         }
+
         result?.let { CalculationResultCard(it) }
-        Spacer(Modifier.height(20.dp))
+        Spacer(Modifier.height(16.dp))
     }
 }
 
 @Composable
-private fun CalculatorPokemonCard(
+private fun CalculatorSideCard(
     title: String,
     state: CalculatorPokemonState,
-    teams: List<SavedTeam>,
     repository: OpponentPresetRepository,
-    modifier: Modifier = Modifier,
-    onChange: (CalculatorPokemonState) -> Unit,
+    isAttacker: Boolean,
+    learnableMoves: List<MoveValue>,
+    selectedMove: String,
+    onSelectMove: (String) -> Unit,
+    statLabel: String,
+    primaryPoints: Int,
+    onPrimaryPoints: (Int) -> Unit,
+    stage: Int,
+    onStageChange: (Int) -> Unit,
+    nature: Double,
+    onNatureChange: (Double) -> Unit,
+    showHpPoints: Boolean,
+    hpPoints: Int,
+    onHpPoints: (Int) -> Unit,
+    showSpeedPoints: Boolean,
+    speedPoints: Int,
+    onSpeedPoints: (Int) -> Unit,
+    showGender: Boolean,
+    showScreens: Boolean,
+    reflect: Boolean,
+    onReflect: (Boolean) -> Unit,
+    lightScreen: Boolean,
+    onLightScreen: (Boolean) -> Unit,
+    onStateChange: (CalculatorPokemonState) -> Unit,
 ) {
     var chooseSpecies by remember { mutableStateOf(false) }
-    var showDetails by rememberSaveable(title) { mutableStateOf(false) }
-    val savedOptions = teams.flatMap { team ->
-        team.pokemon.mapIndexed { index, config -> SavedPokemonOption(team.name, index, config) }
-    }
-    val profiles = repository.profilesFor(state.config.species)
+    var chooseItem by remember { mutableStateOf(false) }
+    var chooseMove by remember { mutableStateOf(false) }
+    var screensExpanded by remember { mutableStateOf(false) }
+    val config = state.config
+    val abilities = (listOfNotNull(config.ability) + repository.abilitiesFor(config.species))
+        .distinctBy { it.showdownId.lowercase() }
+    val selectedMoveName = learnableMoves.firstOrNull { it.entity.showdownId == selectedMove }?.entity?.displayName
+        ?: "搜索招式"
 
     if (chooseSpecies) {
         EntitySearchDialog(
@@ -1501,54 +1616,156 @@ private fun CalculatorPokemonCard(
             entities = repository.speciesCatalog,
             onDismiss = { chooseSpecies = false },
             onSelect = { species ->
-                val profile = repository.recommendedProfile(species)
-                onChange(CalculatorPokemonState(repository.configFor(species, profile), "图鉴配置假设", profile.profileId))
+                val profile = repository.profilesFor(species).firstOrNull { it.profileId == "generated.default" }
+                    ?: repository.recommendedProfile(species)
+                onStateChange(CalculatorPokemonState(repository.configFor(species, profile), "图鉴默认（0 加点）", profile.profileId))
                 chooseSpecies = false
             },
         )
     }
+    if (chooseItem) {
+        EntitySearchDialog(
+            title = "选择持有物",
+            entities = repository.itemCatalog,
+            onDismiss = { chooseItem = false },
+            onSelect = { item ->
+                onStateChange(state.copy(config = config.copy(item = item), sourceLabel = "手动配置", profileId = null))
+                chooseItem = false
+            },
+        )
+    }
+    if (chooseMove) {
+        MoveSearchDialog(
+            title = "选择招式",
+            moves = learnableMoves,
+            repository = repository,
+            onDismiss = { chooseMove = false },
+            onSelect = { move ->
+                onSelectMove(move.entity.showdownId)
+                chooseMove = false
+            },
+        )
+    }
 
-    Card(modifier) {
-        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+    fun updateConfig(next: PokemonConfig) {
+        onStateChange(state.copy(config = next, sourceLabel = "手动配置", profileId = null))
+    }
+
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+
             OutlinedButton(onClick = { chooseSpecies = true }, modifier = Modifier.fillMaxWidth()) {
-                Text(state.config.species.displayName, modifier = Modifier.weight(1f))
+                Text(config.species.displayName, modifier = Modifier.weight(1f))
                 Text("更换")
             }
-            if (savedOptions.isNotEmpty()) {
-                SimplePicker<SavedPokemonOption?>(
-                    label = "从我的队伍带入（可选）",
-                    options = listOf(null) + savedOptions,
-                    selected = null,
-                    display = { option -> option?.let { "${it.teamName} · ${it.slot + 1}. ${it.config.species.displayName}" } ?: "选择已保存配置" },
-                    onSelect = { option ->
-                        option?.let { onChange(CalculatorPokemonState(it.config, "已保存队伍：${it.teamName}")) }
-                    },
-                )
+
+            if (isAttacker) {
+                OutlinedButton(onClick = { chooseMove = true }, modifier = Modifier.fillMaxWidth()) {
+                    Text("招式：$selectedMoveName", modifier = Modifier.weight(1f))
+                    Text("搜索")
+                }
             }
-            state.profileId?.let { profileId ->
-                val selectedProfile = profiles.firstOrNull { it.profileId == profileId } ?: profiles.first()
-                SimplePicker(
-                    label = "配置假设",
-                    options = profiles,
-                    selected = selectedProfile,
-                    display = OpponentPreset::profileName,
-                    onSelect = { profile ->
-                        onChange(CalculatorPokemonState(repository.configFor(state.config.species, profile), "图鉴配置假设", profile.profileId))
-                    },
-                )
+
+            Text("性格修正（$statLabel）", style = MaterialTheme.typography.labelMedium)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf(0.9 to "×0.9", 1.0 to "×1.0", 1.1 to "×1.1").forEach { (value, label) ->
+                    FilterChip(
+                        selected = kotlin.math.abs(nature - value) < 0.001,
+                        onClick = { onNatureChange(value) },
+                        label = { Text(label) },
+                    )
+                }
             }
-            Text(state.sourceLabel, color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodySmall)
-            Text(pokemonConfigSummary(state.config), style = MaterialTheme.typography.bodySmall)
-            TextButton(onClick = { showDetails = !showDetails }) {
-                Text(if (showDetails) "收起详细调整" else "详细调整")
+
+            StepperField("能力等级（$statLabel）", stage, -6, 6, Modifier.fillMaxWidth(), onStageChange)
+
+            if (showHpPoints) {
+                StepperField("生命点数", hpPoints, 0, 32, Modifier.fillMaxWidth(), onHpPoints)
+                StepperField("$statLabel 点数", primaryPoints, 0, 32, Modifier.fillMaxWidth(), onPrimaryPoints)
+            } else {
+                StepperField("$statLabel 点数", primaryPoints, 0, 32, Modifier.fillMaxWidth(), onPrimaryPoints)
             }
-            if (showDetails) {
-                PokemonConfigEditor(state.config, repository) { config ->
-                    onChange(CalculatorPokemonState(config, "手动配置"))
+            if (showSpeedPoints) {
+                StepperField("速度点数（电球用）", speedPoints, 0, 32, Modifier.fillMaxWidth(), onSpeedPoints)
+            }
+
+            SimplePicker<EntityValue?>(
+                label = "特性",
+                options = listOf(null) + abilities,
+                selected = config.ability,
+                display = { it?.displayName ?: "无" },
+                onSelect = { ability -> updateConfig(config.copy(ability = ability)) },
+            )
+
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                OutlinedButton(onClick = { chooseItem = true }, modifier = Modifier.weight(1f)) {
+                    Text("持有物：${config.item?.displayName ?: "无"}")
+                }
+                if (config.item != null) {
+                    TextButton(onClick = { updateConfig(config.copy(item = null)) }) { Text("清除") }
+                }
+            }
+
+            if (showGender) {
+                Text("性别（斗争心用）", style = MaterialTheme.typography.labelMedium)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf(null to "未知", "M" to "雄", "F" to "雌").forEach { (gender, label) ->
+                        FilterChip(
+                            selected = config.gender == gender,
+                            onClick = { updateConfig(config.copy(gender = gender)) },
+                            label = { Text(label) },
+                        )
+                    }
+                }
+            }
+
+            if (showScreens) {
+                TextButton(onClick = { screensExpanded = !screensExpanded }) {
+                    Text(if (screensExpanded) "对战条件（反射壁 / 光墙）▴" else "对战条件（反射壁 / 光墙）▾")
+                }
+                if (screensExpanded) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FilterChip(
+                            selected = reflect,
+                            onClick = { onReflect(!reflect) },
+                            label = { Text("反射壁（物理减半）") },
+                        )
+                        FilterChip(
+                            selected = lightScreen,
+                            onClick = { onLightScreen(!lightScreen) },
+                            label = { Text("光墙（特殊减半）") },
+                        )
+                    }
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun StepperField(
+    label: String,
+    value: Int,
+    min: Int,
+    max: Int,
+    modifier: Modifier = Modifier,
+    onChange: (Int) -> Unit,
+) {
+    Row(
+        modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(label, modifier = Modifier.weight(1f), style = MaterialTheme.typography.labelMedium)
+        TextButton(onClick = { onChange((value - 1).coerceAtLeast(min)) }) { Text("−") }
+        Text(
+            if (value > 0) "+$value" else value.toString(),
+            modifier = Modifier.widthIn(min = 28.dp),
+            fontWeight = FontWeight.Bold,
+            textAlign = TextAlign.Center,
+        )
+        TextButton(onClick = { onChange((value + 1).coerceAtMost(max)) }) { Text("+") }
     }
 }
 
@@ -1892,6 +2109,42 @@ private fun parseCalculation(raw: String): CalculationUiResult {
             localizeWarning(warning.getString("code"), warning.getString("message"))
         }.distinct(),
     )
+}
+
+@Composable
+private fun CompactPicker(
+    label: String,
+    options: List<Pair<String, String>>,
+    selected: String,
+    modifier: Modifier = Modifier,
+    onSelect: (String) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val selectedLabel = options.firstOrNull { it.first == selected }?.second ?: options.firstOrNull()?.second.orEmpty()
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Text(label, style = MaterialTheme.typography.labelMedium)
+        Box(Modifier.fillMaxWidth()) {
+            OutlinedButton(
+                onClick = { expanded = true },
+                modifier = Modifier.fillMaxWidth(),
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+            ) {
+                Text(selectedLabel, modifier = Modifier.weight(1f), maxLines = 1, style = MaterialTheme.typography.bodyMedium)
+                Text("▾")
+            }
+            DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                options.forEach { (value, text) ->
+                    DropdownMenuItem(
+                        text = { Text(text) },
+                        onClick = {
+                            onSelect(value)
+                            expanded = false
+                        },
+                    )
+                }
+            }
+        }
+    }
 }
 
 @Composable
@@ -2327,3 +2580,103 @@ private fun localizeWarning(code: String, message: String): String = when (code)
     "WEATHER_SUPPRESSED_BY_ACTIVE_ABILITY" -> "天气效果被场上的无关天气或气闸压制。"
     else -> message
 }
+
+private fun parseTierCalculation(raw: String): TierCalculationUiResult {
+    val envelope = JSONObject(raw)
+    if (!envelope.optBoolean("ok")) {
+        throw IllegalArgumentException(
+            localizeEngineError(envelope.optJSONObject("error")?.optString("message")),
+        )
+    }
+    val result = envelope.getJSONObject("result")
+    val moveResults = result.getJSONArray("moveResults")
+    val warnings = result.getJSONArray("warnings")
+    val attacker = result.getJSONObject("attackerSummary").optString("speciesName", "我方")
+    val defender = result.getJSONObject("defenderIdentity").getJSONObject("species")
+        .optString("displayName", "对手")
+    val moves = (0 until moveResults.length()).map { index ->
+        val move = moveResults.getJSONObject(index)
+        val isSpecial = move.optString("moveCategory") == "Special"
+        val thirdId = if (isSpecial) TIER_PROFILE_SPECIAL else TIER_PROFILE_PHYSICAL
+        val rangesJson = move.optJSONArray("profileRanges")
+        val ranges = if (rangesJson == null) emptyMap() else (0 until rangesJson.length())
+            .mapNotNull { i -> rangesJson.optJSONObject(i) }
+            .associateBy { it.optString("defenderProfileId") }
+        TierMoveResultUi(
+            name = move.optString("moveName", "招式"),
+            category = if (isSpecial) "特殊" else if (move.optString("moveCategory") == "Physical") "物理" else "变化",
+            tiers = listOf(TIER_PROFILE_HP2, TIER_PROFILE_HP32, thirdId).map { id ->
+                val range = ranges[id]?.optJSONObject("damageRange")
+                TierRangeUi(
+                    minPercent = range?.optDouble("minPercent", 0.0) ?: 0.0,
+                    maxPercent = range?.optDouble("maxPercent", 0.0) ?: 0.0,
+                    minDamage = range?.optInt("minDamage", 0) ?: 0,
+                    maxDamage = range?.optInt("maxDamage", 0) ?: 0,
+                )
+            },
+        )
+    }
+    return TierCalculationUiResult(
+        attacker = attacker,
+        defender = defender,
+        moves = moves,
+        warnings = (0 until warnings.length()).map { index ->
+            val warning = warnings.getJSONObject(index)
+            localizeWarning(warning.getString("code"), warning.getString("message"))
+        }.distinct(),
+    )
+}
+
+@Composable
+private fun TierCalculationCard(result: TierCalculationUiResult) {
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text("三档伤害估算", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Text(
+                "${result.attacker} → ${result.defender}",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.primary,
+            )
+            result.moves.forEach { move ->
+                HorizontalDivider()
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(move.name, Modifier.weight(1f), fontWeight = FontWeight.Bold)
+                    Text(move.category, style = MaterialTheme.typography.labelSmall)
+                }
+                if (move.category == "变化") {
+                    Text("变化招式无直接伤害", style = MaterialTheme.typography.bodySmall)
+                } else {
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        val labels = listOf("① HP+2", "② HP+32", "③ 32点+性格")
+                        move.tiers.forEachIndexed { index, tier ->
+                            Column(
+                                Modifier
+                                    .weight(1f)
+                                    .background(Color(0xFF1E2736), RoundedCornerShape(8.dp))
+                                    .padding(vertical = 8.dp, horizontal = 4.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                            ) {
+                                Text(labels[index], style = MaterialTheme.typography.labelSmall)
+                                Text(
+                                    if (tier.maxPercent <= 0.0) "—" else
+                                        "${formatPercent(tier.minPercent)}–${formatPercent(tier.maxPercent)}",
+                                    fontWeight = FontWeight.Bold,
+                                )
+                                Text(
+                                    if (tier.maxDamage <= 0) "" else "${tier.minDamage}–${tier.maxDamage} 伤害",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+            if (result.warnings.isNotEmpty()) {
+                HorizontalDivider()
+                result.warnings.forEach { Text("• $it", style = MaterialTheme.typography.bodySmall) }
+            }
+        }
+    }
+}
+
