@@ -18,8 +18,7 @@ class BattleAssistantModeTest {
     }
 
     @Test
-    fun `team preview recognition keeps direct hud minimized until recognition completes`() {
-        assertFalse(shouldKeepHudMinimizedDuringTeamPreviewRecognition(BattleAssistantMode.STANDARD))
-        assertTrue(shouldKeepHudMinimizedDuringTeamPreviewRecognition(BattleAssistantMode.HUD))
+    fun `hud mode is selectable by wire name`() {
+        assertEquals(BattleAssistantMode.HUD, BattleAssistantMode.fromWireName("hud"))
     }
 }

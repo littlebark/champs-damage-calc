@@ -276,38 +276,6 @@ object TeamRepository {
         file.writeUtf8Atomically(json.toString(2))
     }
 
-    fun saveImportedTeam(
-        context: Context,
-        teamName: String,
-        publicCode: String,
-        trainerName: String?,
-        pokemon: List<PokemonConfig>,
-    ): SavedTeam {
-        val name = teamName.trim()
-        val code = normalizeTeamCode(publicCode)
-        require(name.isNotEmpty()) { "队伍名称不能为空" }
-        require(name.length <= 30) { "队伍名称不能超过 30 个字符" }
-        require(code != null) { "队伍码必须是 10 位英文字母或数字" }
-        require(pokemon.size == 6) { "公开队伍必须包含 6 只宝可梦" }
-        val incomplete = pokemon.flatMapIndexed { index, config ->
-            config.damageReadinessIssues().map { issue -> "第 ${index + 1} 只宝可梦：$issue" }
-        }
-        require(incomplete.isEmpty()) { incomplete.first() }
-
-        val saved = createImportedTeamJson(
-            savedTeamId = "team-code-${UUID.randomUUID()}",
-            teamName = name,
-            publicCode = code,
-            trainerName = trainerName,
-            pokemon = pokemon,
-            now = Instant.now(),
-        )
-        context.filesDir.resolve("saved-teams")
-            .resolve("${saved.getString("savedTeamId")}.json")
-            .writeUtf8Atomically(saved.toString(2))
-        return parseTeam(saved, userSaved = true)
-    }
-
     fun saveShowdownTeam(context: Context, teamName: String, pokemon: List<PokemonConfig>): SavedTeam {
         require(teamName.trim().length in 1..30) { "队伍名称需要 1–30 个字符" }
         require(pokemon.size in 1..6 && pokemon.all(PokemonConfig::isDamageReady)) { "PS 队伍配置不完整" }

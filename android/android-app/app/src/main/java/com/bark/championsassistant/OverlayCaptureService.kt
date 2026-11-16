@@ -68,8 +68,6 @@ class OverlayCaptureService : Service() {
     companion object {
         private const val ACTION_START = "com.bark.championsassistant.START_CAPTURE"
         private const val ACTION_STOP = "com.bark.championsassistant.STOP_CAPTURE"
-        private const val ACTION_DEBUG_RECOGNIZE_TEAM_PREVIEW =
-            "com.bark.championsassistant.DEBUG_RECOGNIZE_TEAM_PREVIEW"
         private const val ACTION_OPEN_OWN_TEAM_CORRECTION =
             "com.bark.championsassistant.OPEN_OWN_TEAM_CORRECTION"
         private const val ACTION_COMPUTE_SNAPSHOT =
@@ -172,12 +170,11 @@ class OverlayCaptureService : Service() {
     private var paddleOcr: PaddleOcrEngine? = null
     private val ocrVocabulary: EntityCatalog by lazy { EntityCatalog(this) }
     private lateinit var importRepository: OwnTeamImportRepository
-    private lateinit var teamPreviewEngine: TeamPreviewRecognitionEngine
-    private lateinit var teamPreviewRepository: TeamPreviewResultRepository
-    private lateinit var damageRuntime: DamageEngineRuntime
     private lateinit var presetRepository: OpponentPresetRepository
+    private lateinit var damageRuntime: DamageEngineRuntime
     private lateinit var battleOverlayController: BattleOverlayController
     private lateinit var ownTeamCorrectionController: OwnTeamCorrectionOverlayController
+    @Volatile private var destroyed = false
     private var bubble: View? = null
     private var bubbleParams: WindowManager.LayoutParams? = null
     private var teamNamePrompt: View? = null
@@ -201,8 +198,6 @@ class OverlayCaptureService : Service() {
     private var frozenMenuFrameCopyMs = 0.0
     @Volatile private var frameTrackingEnabled = true
     @Volatile private var recognizing = false
-    @Volatile private var keepHudMinimizedForTeamPreviewRecognition = false
-    @Volatile private var destroyed = false
     private var ownTeamRecognitionGeneration = 0L
     private var ownTeamRecognitionTask: Future<*>? = null
     private var pendingOwnTeamSlowNotice: Runnable? = null
@@ -242,9 +237,6 @@ class OverlayCaptureService : Service() {
         }
         ocrEngine = OwnTeamOcrEngine(this, paddleOcr)
         importRepository = OwnTeamImportRepository(this)
-        teamPreviewEngine = TeamPreviewRecognitionEngine(this)
-        teamPreviewEngine.prepare()
-        teamPreviewRepository = TeamPreviewResultRepository(this)
         damageRuntime = DamageEngineRuntime(this)
         presetRepository = OpponentPresetRepository(this)
         val battleSessionRepository = BattleSessionRepository(this)
@@ -267,7 +259,6 @@ class OverlayCaptureService : Service() {
             shouldAutoOpenDirectHud = { assistantMode.autoOpenDirectHud },
             // The direct HUD has no PopupMenu phase and therefore no frozen menu frame.
             // Wait for a clean live frame after the HUD windows are dismissed instead.
-            onRecognizeTeamPreview = { captureAndRecognizeTeamPreview(useFrozenMenuFrame = false) },
             onRecognizeOwnTeam = ::captureAndRecognizeOwnTeam,
             onRecalculateFromScreen = ::captureAndComputeSnapshot,
         )
@@ -328,15 +319,6 @@ class OverlayCaptureService : Service() {
         }
         if (intent?.action == ACTION_OPEN_OWN_TEAM_CORRECTION) {
             openOwnTeamCorrection()
-            return START_NOT_STICKY
-        }
-        val debuggable = applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
-        if (debuggable && intent?.action == ACTION_DEBUG_RECOGNIZE_TEAM_PREVIEW) {
-            if (projection == null) {
-                publish("对局助手尚未准备好，请返回 App 重新启动")
-            } else {
-                captureAndRecognizeTeamPreview(useFrozenMenuFrame = false)
-            }
             return START_NOT_STICKY
         }
         if (intent?.action != ACTION_START) return START_NOT_STICKY
@@ -787,7 +769,6 @@ class OverlayCaptureService : Service() {
         if (assistantMode.usesFloatingBubble) {
             showBubble()
         } else {
-            if (keepHudMinimizedForTeamPreviewRecognition) return
             removeBubble()
             battleOverlayController.showDirectHudEntry(revealHiddenHud)
         }
@@ -842,7 +823,7 @@ class OverlayCaptureService : Service() {
         onCaptureStarted: () -> Unit = {},
         onBusy: () -> Unit = {},
         onFailure: ((String) -> Unit)? = null,
-        onFrame: (Bitmap, TeamPreviewCaptureTiming) -> Unit,
+        onFrame: (Bitmap, CaptureTiming) -> Unit,
     ) {
         if (destroyed) return
         if (recognizing) {
@@ -901,7 +882,7 @@ class OverlayCaptureService : Service() {
                 frame.recycle()
                 return@capture
             }
-            onFrame(frame, TeamPreviewCaptureTiming(requestedAt, hideWaitMs, frameCopyMs))
+            onFrame(frame, CaptureTiming(requestedAt, hideWaitMs, frameCopyMs))
         }
         pendingFrameCapture = request
         if (!mainHandler.postDelayed(request, if (useFrozenMenuFrame) 0 else 1_000)) {
@@ -1469,55 +1450,6 @@ class OverlayCaptureService : Service() {
         OwnTeamPageType.STATS -> "能力值页"
     }
 
-    private fun captureAndRecognizeTeamPreview(useFrozenMenuFrame: Boolean = true) {
-        captureFrame(
-            useFrozenMenuFrame = useFrozenMenuFrame,
-            onCaptureStarted = {
-                keepHudMinimizedForTeamPreviewRecognition =
-                    shouldKeepHudMinimizedDuringTeamPreviewRecognition(assistantMode)
-                battleOverlayController.onTeamRecognitionStarted()
-            },
-            onFailure = { message ->
-                keepHudMinimizedForTeamPreviewRecognition = false
-                showAssistantEntry(revealHiddenHud = false)
-                publish(message)
-            },
-        ) { frame, captureTiming ->
-            teamPreviewEngine.recognize(frame, captureTiming) callback@{ result ->
-                frame.recycle()
-                if (destroyed) return@callback
-                mainHandler.post {
-                    if (destroyed) return@post
-                    frameTrackingEnabled = true
-                    recognizing = false
-                    result.onSuccess { preview ->
-                        runCatching { teamPreviewRepository.save(preview) }
-                            .onSuccess { saved ->
-                                keepHudMinimizedForTeamPreviewRecognition = false
-                                val clickToSavedMs = (System.nanoTime() - captureTiming.requestedAtNanos) / 1_000_000.0
-                                Log.i(
-                                    "TeamPreviewPerf",
-                                    "privateReplaceMs=${saved.privateWriteMs}, clickToSavedMs=$clickToSavedMs",
-                                )
-                                publish(preview.summary())
-                                battleOverlayController.showSetup()
-                            }
-                            .onFailure { error ->
-                                keepHudMinimizedForTeamPreviewRecognition = false
-                                Log.e(LOG_TAG, "Team preview save failed", error)
-                                showAssistantEntry(revealHiddenHud = false)
-                                publish("无法保存双方阵容，请重新识别")
-                            }
-                    }.onFailure { error ->
-                        keepHudMinimizedForTeamPreviewRecognition = false
-                        Log.e(LOG_TAG, "Team preview recognition failed", error)
-                        showAssistantEntry(revealHiddenHud = false)
-                        publish("无法识别双方阵容，请确认队伍预览页面完整显示后重试")
-                    }
-                }
-            }
-        }
-    }
 
     private fun openOwnTeamCorrection() {
         if (!Settings.canDrawOverlays(this)) {
@@ -1836,7 +1768,6 @@ class OverlayCaptureService : Service() {
         releaseProjection()
         ocrEngine.close()
         paddleOcr?.close()
-        teamPreviewEngine.close()
         damageRuntime.destroy()
         CaptureUiState.running.value = false
         CaptureUiState.message.value = "对局助手已结束"

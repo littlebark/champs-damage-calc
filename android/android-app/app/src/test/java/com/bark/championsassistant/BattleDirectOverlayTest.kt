@@ -44,7 +44,7 @@ class BattleDirectOverlayTest {
         val anchor = requireNotNull(BattleDirectHudLayout.anchors[BattleDirectHudElement.MATCHUP])
 
         displays.forEach { display ->
-            val roiViewport = centeredTeamPreviewViewport(display.width, display.height, 16.0 / 9.0)
+            val roiViewport = centeredGameViewport(display.width, display.height, 16.0 / 9.0)
             val viewport = battleDirectGameViewport(display)
             assertEquals(
                 OverlayBounds(
@@ -375,9 +375,9 @@ class BattleDirectOverlayTest {
         assertEquals(BattleDirectHudMode.CALCULATION, nextBattleDirectHudMode(BattleDirectHudMode.TYPE_MATCHUP))
         assertEquals(BattleDirectHudMode.HIDDEN, nextBattleDirectHudMode(BattleDirectHudMode.CALCULATION))
         assertEquals(BattleDirectHudMode.TYPE_MATCHUP, nextBattleDirectHudMode(BattleDirectHudMode.HIDDEN))
-        assertEquals("切换计算", battleDirectHudToggleLabel(true, BattleDirectHudMode.TYPE_MATCHUP))
-        assertEquals("隐藏 HUD", battleDirectHudToggleLabel(true, BattleDirectHudMode.CALCULATION))
-        assertEquals("显示 HUD", battleDirectHudToggleLabel(true, BattleDirectHudMode.HIDDEN))
+        assertEquals("计算伤害", battleDirectHudToggleLabel(true, BattleDirectHudMode.TYPE_MATCHUP))
+        assertEquals("收起", battleDirectHudToggleLabel(true, BattleDirectHudMode.CALCULATION))
+        assertEquals("计算伤害", battleDirectHudToggleLabel(true, BattleDirectHudMode.HIDDEN))
         assertEquals("等待阵容", battleDirectHudToggleLabel(false, BattleDirectHudMode.TYPE_MATCHUP))
     }
 

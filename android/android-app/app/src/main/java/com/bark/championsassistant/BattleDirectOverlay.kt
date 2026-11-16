@@ -117,7 +117,7 @@ internal fun battleDirectTypeMatchupHeight(region: OverlayBounds): Int =
     (region.height * TYPE_MATCHUP_PANEL_HEIGHT_FRACTION).roundToInt().coerceIn(1, region.height.coerceAtLeast(1))
 
 internal fun battleDirectGameViewport(fullRegion: OverlayBounds): OverlayBounds {
-    val viewport = centeredTeamPreviewViewport(
+    val viewport = centeredGameViewport(
         fullRegion.width,
         fullRegion.height,
         BATTLE_GAME_ASPECT_RATIO,
@@ -457,7 +457,6 @@ internal class BattleDirectOverlayUi(
     private val onApplyChange: (SpeedSide, Int, String) -> Unit,
     private val onCycleMode: () -> Unit,
     private val onToggleBattleType: () -> Unit,
-    private val onRecognizeTeamPreview: () -> Unit,
     private val onRecognizeOwnTeam: () -> Unit,
     private val onOpenStatusSection: (BattleDirectHudSection) -> Unit,
     private val onSelectAssumption: (String) -> Unit,

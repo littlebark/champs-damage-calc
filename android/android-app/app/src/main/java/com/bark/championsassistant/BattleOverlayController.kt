@@ -77,7 +77,6 @@ internal class BattleOverlayController(
     private val publish: (String) -> Unit,
     private val onOverlayVisible: (Boolean) -> Unit,
     private val shouldAutoOpenDirectHud: () -> Boolean,
-    private val onRecognizeTeamPreview: () -> Unit,
     private val onRecognizeOwnTeam: () -> Unit,
     /** 重新抓一帧、重新识别双方并按当前画面算伤害（每回合都能重算）。 */
     private val onRecalculateFromScreen: () -> Unit = {},
@@ -131,7 +130,6 @@ internal class BattleOverlayController(
             onApplyChange = ::applyDirectHudChange,
             onCycleMode = ::cycleDirectHudMode,
             onToggleBattleType = ::toggleDirectHudBattleType,
-            onRecognizeTeamPreview = onRecognizeTeamPreview,
             onRecognizeOwnTeam = ::recognizeOwnTeamFromDirectHud,
             onOpenStatusSection = ::showDirectHudSection,
             onSelectAssumption = ::selectDirectHudPreset,

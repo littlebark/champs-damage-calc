@@ -435,24 +435,6 @@ class BattleStateAndReadinessTest {
     }
 
     @Test
-    fun aNewTeamPreviewInvalidatesThePreviousBattleSession() {
-        val filesDir = Files.createTempDirectory("team-preview-reset").toFile()
-        try {
-            val battleDirectory = filesDir.resolve("battle-session").apply { mkdirs() }
-            val previousSession = battleDirectory.resolve("current-battle-session.json").apply {
-                writeText("old battle state")
-            }
-
-            replaceCurrentTeamPreview(filesDir, "new preview")
-
-            assertFalse(previousSession.exists())
-            assertEquals("new preview", battleDirectory.resolve("current-team-preview.json").readText())
-        } finally {
-            filesDir.deleteRecursively()
-        }
-    }
-
-    @Test
     fun hudLaunchClearsOnlyTransientBattleState() {
         val filesDir = Files.createTempDirectory("hud-launch-reset").toFile()
         try {

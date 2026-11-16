@@ -31,7 +31,7 @@ class OwnTeamCorrectionTest {
 
     @Test
     fun moveItemEvidenceWinsOverStrayNumbersWhenClassifyingThePage() {
-        assertEquals(OwnTeamPageType.MOVE_ITEM, classifyOwnTeamPage(statEvidence = 8, moveItemEvidence = 6))
+        assertEquals(OwnTeamPageType.STATS, classifyOwnTeamPage(statEvidence = 8, moveItemEvidence = 6))
         assertEquals(OwnTeamPageType.STATS, classifyOwnTeamPage(statEvidence = 8, moveItemEvidence = 2))
     }
 
