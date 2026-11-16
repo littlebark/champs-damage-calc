@@ -10,17 +10,23 @@ import android.util.Log
 class OcrDebugReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val path = intent.getStringExtra("path") ?: return
+        val limit = intent.getIntExtra("limit", 1024)
         val target = context.applicationContext
         Thread {
             runCatching {
                 val bitmap = BitmapFactory.decodeFile(path) ?: error("decode failed: $path")
                 val engine = PaddleOcrEngine(target)
-                val started = System.currentTimeMillis()
-                val lines = engine.recognize(bitmap)
-                Log.i(TAG, "image=${bitmap.width}x${bitmap.height} lines=${lines.size} cost=${System.currentTimeMillis() - started}ms")
-                lines.take(40).forEach { line ->
-                    Log.i(TAG, "box=${line.left},${line.top},${line.right},${line.bottom} text=${line.text.take(40).replace("\r", "")}")
+                // 第一次跑包含 models 加载后的首次 warm-up，不计入耗时；后面两次取最小值。
+                engine.recognize(bitmap, limit)
+                var best = Long.MAX_VALUE
+                repeat(2) {
+                    val started = System.currentTimeMillis()
+                    val lines = runCatching { engine.recognize(bitmap, limit, logTiming = true) }.getOrDefault(emptyList())
+                    val cost = System.currentTimeMillis() - started
+                    if (cost < best) best = cost
+                    Log.i(TAG, "image=${bitmap.width}x${bitmap.height} limit=$limit lines=${lines.size} cost=${cost}ms")
                 }
+                Log.i(TAG, "best=$best" + "ms")
                 engine.close()
             }.onFailure { Log.e(TAG, "Paddle debug run failed", it) }
         }.start()

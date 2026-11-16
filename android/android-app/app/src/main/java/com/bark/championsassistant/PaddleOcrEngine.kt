@@ -26,7 +26,7 @@ class PaddleOcrEngine(context: Context) : AutoCloseable {
 
     init {
         val options = OrtSession.SessionOptions().apply {
-            setIntraOpNumThreads(4)
+            setIntraOpNumThreads(OC_RUNTIME_THREADS)
             setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT)
         }
         val detBytes = appContext.assets.open("ocr/det.onnx").use { it.readBytes() }
@@ -50,7 +50,8 @@ class PaddleOcrEngine(context: Context) : AutoCloseable {
         return "${text.take(20)}|score=$score|boxes=${'x'}"
     }
 
-    fun recognize(bitmap: Bitmap, limit: Int = 1280): List<SnapshotTextLine> {
+    fun recognize(bitmap: Bitmap, limit: Int = DEFAULT_DET_LIMIT, logTiming: Boolean = false): List<SnapshotTextLine> {
+        val started = if (logTiming) System.currentTimeMillis() else 0L
         val scale = min(1f, limit.toFloat() / max(bitmap.width, bitmap.height))
         val rw = max(32, ((bitmap.width * scale) / 32f).roundToInt() * 32)
         val rh = max(32, ((bitmap.height * scale) / 32f).roundToInt() * 32)
@@ -70,7 +71,9 @@ class PaddleOcrEngine(context: Context) : AutoCloseable {
             input[plane + index] = (g - MEAN_G) / STD_G
             input[2 * plane + index] = (r - MEAN_B) / STD_B
         }
+        val detStarted = if (logTiming) System.currentTimeMillis() else 0L
         val detMap = runDet(input, rw, rh)
+        val detCost = if (logTiming) System.currentTimeMillis() - detStarted else 0L
         val scaleX = rw / bitmap.width.toFloat()
         val scaleY = rh / bitmap.height.toFloat()
         // det 的概率图是缩放后的坐标系，这里统一换算回原图像素，后续裁剪/上报都用原图坐标。
@@ -84,26 +87,25 @@ class PaddleOcrEngine(context: Context) : AutoCloseable {
         }
         val result = ArrayList<SnapshotTextLine>(boxes.size)
         boxes.forEach { box ->
-            val crop = cropBox(bitmap, box)
-            if (crop != null && DEBUG_LOGS && result.isEmpty()) {
-                runCatching {
-                    appContext.openFileOutput("debug_crop.png", Context.MODE_PRIVATE).use { out ->
-                        crop.compress(Bitmap.CompressFormat.PNG, 100, out)
-                    }
-                }
-            }
-            if (crop == null) return@forEach
-            val text = runCatching { runRec(crop) }.getOrNull()
+            val crop = cropBox(bitmap, box) ?: return@forEach
+            val text = runCatching { runRec(crop) }.getOrNull()?.first
             crop.recycle()
-            if (text == null || text.first.isBlank()) return@forEach
+            if (text.isNullOrBlank()) return@forEach
             result += SnapshotTextLine(
-                text = text.first,
+                text = text,
                 left = box.left,
                 top = box.top,
                 right = box.right,
                 bottom = box.bottom,
                 imageWidth = bitmap.width,
                 imageHeight = bitmap.height,
+            )
+        }
+        if (logTiming) {
+            Log.i(
+                LOG_TAG,
+                "recognize ${bitmap.width}x${bitmap.height} det@${rw}x$rh detCost=${detCost}ms " +
+                    "total=${System.currentTimeMillis() - started}ms lines=${result.size}",
             )
         }
         return result.sortedWith(compareBy({ it.top }, { it.left }))
@@ -352,6 +354,18 @@ class PaddleOcrEngine(context: Context) : AutoCloseable {
 
     private companion object {
         const val LOG_TAG = "PaddleOcr"
+        /**
+         * 检测网络的输入长边。状态页的小字对分辨率敏感（1024 会把「爱管侍」读成「爱管」），
+         * 所以默认保持 1280；选招页文字大、只要四招和名字，调用方会显式传 1024。
+         */
+        const val DEFAULT_DET_LIMIT = 1280
+        const val REC_HEIGHT = 48
+        const val REC_MAX_WIDTH = 1600
+        /** 一批最多几行、桶内宽度最多差多少像素（差太多补零会拖慢整批）。 */
+        const val REC_BATCH_SIZE = 8
+        const val BATCH_WIDTH_SLACK = 80
+        /** 线程数：实测 4 比 6 快（6 会跑到小核上，检测反而从 331ms 变 780ms）。 */
+        const val OC_RUNTIME_THREADS = 4
         const val DEBUG_LOGS = false
         const val DET_THRESHOLD = 0.3f
         const val BOX_THRESHOLD = 0.45f

@@ -1399,7 +1399,7 @@ class OverlayCaptureService : Service() {
             onBusy = { showStatusChip("上一次识别尚未结束，请稍候") },
             onFailure = { message -> publish(message) },
         ) { frame, _ ->
-            val lines = runCatching { paddleOcr?.recognize(frame) ?: emptyList() }.getOrElse { error ->
+            val lines = runCatching { paddleOcr?.recognize(frame, limit = 1024) ?: emptyList() }.getOrElse { error ->
                 Log.e(LOG_TAG, "PaddleOCR failed", error)
                 emptyList()
             }
