@@ -12,6 +12,8 @@ data class EntityValue(
     val showdownId: String,
     val displayName: String,
     val entityType: String,
+    /** "M" / "F"；从画面读到性别符号时才有值，用于雌雄不同形态与按性别判定的特性。 */
+    val gender: String? = null,
 )
 
 data class MoveValue(
@@ -159,7 +161,8 @@ data class PokemonEditorState(
             knownItem = config.item,
             knownMoves = config.moves,
             knownStatAlignment = config.statAlignment,
-            gender = config.gender,
+            // 记录里没单独填性别时，用识别物种时读到的性别，避免伤害计算丢掉这个信息。
+            gender = config.gender ?: config.species.gender,
         )
     }
 
@@ -646,6 +649,7 @@ private fun entityForInput(type: String, input: String, known: EntityValue?): JS
         put("canonicalId", exactKnown?.canonicalId ?: "$type.$normalized")
         put("showdownId", exactKnown?.showdownId ?: showdownId)
         put("displayName", exactKnown?.displayName ?: showdownId)
+        exactKnown?.gender?.let { put("gender", it) }
         put("source", "user")
     }
 }

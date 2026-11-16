@@ -743,8 +743,11 @@ class OpponentPresetRepository(private val context: Context) {
         }
     }
 
-    fun localizeSpecies(species: EntityValue): EntityValue =
-        speciesByShowdown[normalizeShowdownId(species.showdownId)] ?: species
+    fun localizeSpecies(species: EntityValue): EntityValue {
+        // 词库条目本身不带性别，换成本地名时要把识别到的性别带过去，否则会被悄悄清空。
+        val localized = speciesByShowdown[normalizeShowdownId(species.showdownId)] ?: return species
+        return if (species.gender == null) localized else localized.copy(gender = species.gender)
+    }
 
     fun formsFor(species: EntityValue): List<SpeciesFormOption> {
         val selected = formBySpecies[normalizeShowdownId(species.showdownId)] ?: return emptyList()
@@ -896,6 +899,18 @@ class OpponentPresetRepository(private val context: Context) {
 
     fun formFor(species: EntityValue): SpeciesFormOption? =
         formBySpecies[normalizeShowdownId(species.showdownId)]
+
+    /**
+     * 选招页名牌上带 ♂/♀ 时，把物种换成对应形态并记下性别：
+     * 超能妙喵、爱管侍、幽尾玄鱼这类雌雄是两条独立记录，♀ 必须落到「-F」，否则种族值和招式池都是雄性的。
+     */
+    fun speciesWithGender(species: EntityValue, rawLineText: String): EntityValue {
+        val gender = detectGenderMark(rawLineText) ?: return species
+        if (species.entityType != "species" || gender != "F") return species.copy(gender = gender)
+        val female = speciesByShowdown[normalizeShowdownId("${species.showdownId}-F")]
+            ?: return species.copy(gender = gender)
+        return female.copy(gender = gender)
+    }
 
     fun learnableMovesFor(species: EntityValue): List<MoveValue> =
         formBySpecies[normalizeShowdownId(species.showdownId)]?.learnableMoves.orEmpty()
@@ -1511,6 +1526,7 @@ internal fun EntityValue.toJson() = JSONObject().apply {
     put("canonicalId", canonicalId)
     put("showdownId", showdownId)
     put("displayName", displayName)
+    gender?.let { put("gender", it) }
     put("source", "user")
 }
 
@@ -1526,6 +1542,7 @@ private fun JSONObject.toEntityValue(): EntityValue {
             ?: localizedName
             ?: getString("showdownId"),
         entityType = optString("entityType", "species").lowercase(),
+        gender = optString("gender").takeIf(String::isNotBlank),
     )
 }
 

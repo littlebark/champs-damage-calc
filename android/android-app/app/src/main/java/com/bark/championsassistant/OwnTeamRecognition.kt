@@ -356,7 +356,13 @@ sealed interface CurrentPageRecord {
 }
 
 private fun RecognitionEntity.toEntityValue(): EntityValue =
-    EntityValue(canonicalId = canonicalId, showdownId = showdownId, displayName = displayName, entityType = entityType)
+    EntityValue(
+        canonicalId = canonicalId,
+        showdownId = showdownId,
+        displayName = displayName,
+        entityType = entityType,
+        gender = gender,
+    )
 
 class OwnTeamOcrEngine(context: Context, private val paddle: PaddleOcrEngine? = null) : AutoCloseable {
     private val appContext = context.applicationContext
@@ -556,6 +562,7 @@ class OwnTeamOcrEngine(context: Context, private val paddle: PaddleOcrEngine? = 
                             showdownId = hit.showdownId,
                             displayName = hit.displayName,
                             entityType = "species",
+                            gender = hit.gender,
                         )
                     }
                 }

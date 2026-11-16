@@ -115,6 +115,30 @@ class OwnTeamRecognitionTest {
         assertNull(femaleVariantShowdownId("Meowstic-F", roster))
     }
 
+    @Test
+    fun entityGenderIsCarriedIntoSerializedBuild() {
+        val species = EntityValue(
+            canonicalId = "species.meowsticf",
+            showdownId = "Meowstic-F",
+            displayName = "超能妙喵-雌性",
+            entityType = "species",
+            gender = "F",
+        )
+        val config = PokemonConfig(
+            species = species,
+            level = 50,
+            actualStats = StatFields(),
+            statPoints = StatFields(),
+            ability = null,
+            item = null,
+            moves = emptyList(),
+        )
+        val json = PokemonEditorState.from(config).toBuildJson("OWN_BUILD")
+
+        assertEquals("F", json.getString("gender"))
+        assertEquals("F", json.getJSONObject("species").optString("gender"))
+    }
+
     private fun entity(canonicalId: String, showdownId: String, rawText: String, confidence: Double) =
         RecognitionEntity(
             entityType = "species",

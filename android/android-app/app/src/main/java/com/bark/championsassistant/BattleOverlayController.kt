@@ -197,8 +197,16 @@ internal class BattleOverlayController(
             hideDirectHud()
             return
         }
-        val updated = existing?.copy(actualStats = actualStats, statPoints = statPoints)
-            ?: defaultConfigFor(species).copy(actualStats = actualStats, statPoints = statPoints)
+        val updated = (existing?.copy(actualStats = actualStats, statPoints = statPoints)
+            ?: defaultConfigFor(species).copy(actualStats = actualStats, statPoints = statPoints))
+            .let { config ->
+                // 从状态页读到了性别就写进记录，斗争心这类按性别判定的特性要用。
+                if (config.gender == null && species.gender != null) {
+                    config.copy(gender = species.gender)
+                } else {
+                    config
+                }
+            }
         runCatching {
             val team = TeamRepository.upsertMyPokemon(context, listOf(updated))
             val slot = team.pokemon.indexOfFirst {
@@ -235,6 +243,7 @@ internal class BattleOverlayController(
         val zero = StatFields(hp = "0", atk = "0", def = "0", spa = "0", spd = "0", spe = "0")
         return PokemonConfig(
             species = species,
+            gender = species.gender,
             level = 50,
             actualStats = presetRepository.statsFor(species, zero, null),
             statPoints = zero,

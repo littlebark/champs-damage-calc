@@ -1365,7 +1365,8 @@ class OverlayCaptureService : Service() {
             Log.i(LOG_TAG, "Snapshot match failed: species lines=${speciesLines.size}")
             return null
         }
-        val own = ownLine.second
+        val own = presetRepository.speciesWithGender(ownLine.second, ownLine.first.text)
+        val opponent = presetRepository.speciesWithGender(opponentLine.second, opponentLine.first.text)
         val learnable = presetRepository.learnableMovesFor(own)
         val moveLines = lines
             .filter { it.left > imageWidth * 0.45 }
@@ -1383,8 +1384,8 @@ class OverlayCaptureService : Service() {
         } else {
             moveLines.take(4)
         }
-        Log.i(LOG_TAG, "Snapshot matched: own=${own.displayName} opponent=${opponentLine.second.displayName} moves=${moves.map { it.entity.displayName }}")
-        return SnapshotMatch(own, opponentLine.second, moves)
+        Log.i(LOG_TAG, "Snapshot matched: own=${own.displayName} opponent=${opponent.displayName} moves=${moves.map { it.entity.displayName }}")
+        return SnapshotMatch(own, opponent, moves)
     }
 
     private fun resetOwnTeamImportAfterEmptyFirstPage(reason: String) {        runCatching { importRepository.discardCurrentImport() }
