@@ -25,3 +25,6 @@ reference/
 *.log
 .DS_Store
 Thumbs.db
+
+# ---- QA 数据备份（含真机私有数据，不入库） ----
+docs/qa-*/app-data-backup/

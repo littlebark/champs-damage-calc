@@ -17,7 +17,7 @@
         android:dataExtractionRules="@xml/backup_rules"
         android:fullBackupContent="@xml/backup_rules_legacy"
         android:icon="@mipmap/ic_launcher"
-        android:label="冠军伤害计算器"
+        android:label="宝冠军伤害助手"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@android:style/Theme.Material.Light.NoActionBar">
@@ -38,7 +38,7 @@
             android:name=".OcrDebugReceiver"
             android:exported="true">
             <intent-filter>
-                <action android:name="com.crazylei12.pokemonchampionsassistant.DEBUG_OCR" />
+                <action android:name="com.bark.championsassistant.DEBUG_OCR" />
             </intent-filter>
         </receiver>
     </application>

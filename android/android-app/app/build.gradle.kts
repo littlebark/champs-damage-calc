@@ -97,11 +97,11 @@ check(requestedAndroidAbis.isNotEmpty() && requestedAndroidAbis.all(supportedAnd
 }
 
 android {
-    namespace = "com.crazylei12.pokemonchampionsassistant"
+    namespace = "com.bark.championsassistant"
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "com.crazylei12.pokemonchampionsassistant"
+        applicationId = "com.bark.championsassistant"
         minSdk = 33
         targetSdk = 36
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -124,8 +124,8 @@ android {
 
     buildTypes {
         getByName("debug") {
-            applicationIdSuffix = ".debug"
-            versionNameSuffix = "-debug"
+            // 自用测试包：不加 .debug 后缀、不加 -debug 版本后缀，覆盖安装同一支应用。
+            isMinifyEnabled = false
         }
         getByName("release") {
             stableUpdateSigning?.let { signingConfig = it }

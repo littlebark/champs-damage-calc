@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
-    <!-- Local fixture endpoints are allowed only in the separately installed Debug app. -->
+    <!-- 自用测试包：与正式包同名，覆盖安装即可，不再单独区分 Debug。 -->
     <application
-        android:label="冠军伤害计算器（调试）"
+        android:label="宝冠军伤害助手"
         android:usesCleartextTraffic="true"
         tools:replace="android:label" />
 </manifest>
