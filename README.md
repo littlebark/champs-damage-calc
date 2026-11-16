@@ -16,7 +16,7 @@
 | 识别当前 | 停在「状态」页读六项数值 + 加点；停在「能力」页读招式 / 特性 / 持有物（不编造未读到的字段） |
 | 我的宝可梦 | 按物种 upsert 的一份持续增长的记录列表，重复遇到以新识别为准 |
 
-伤害计算走本地 WebView + `assets/damage-engine.js`，完全离线；OCR 用 PaddleOCR（PP-OCRv6 det + rec）与 ML Kit 兜底，全部在设备本地完成，不上传截图与数据。
+伤害计算走本地 WebView + `assets/damage-engine.js`，完全离线；OCR 用 PaddleOCR（PP-OCRv6 det + rec），全部在设备本地完成，不上传截图与数据。
 
 ## 目录
 
@@ -67,17 +67,15 @@ cd android\android-app
 - `android/android-app/app/src/main/assets/ocr/det.onnx`（约 9.5 MB，文本检测）、`rec.onnx`（约 20 MB，文本识别）、`keys.txt`（字典）
 - 上游：<https://github.com/PaddlePaddle/PaddleOCR>（Apache-2.0）
 - 许可副本：`android/third_party/licenses/APACHE-2.0.txt`
-- 另有 Google ML Kit 文本识别作为兜底，条款见 `android/third_party/licenses/ml-kit-TERMS.txt`
+- 全应用唯一的 OCR 引擎，不再依赖任何云端或在线识别服务
 
 ### 4. 运行时依赖
 
-AndroidX / Jetpack Compose / ONNX Runtime / ML Kit 等，均为各自开源或商业许可，随构建产物附带许可声明。
+AndroidX / Jetpack Compose / ONNX Runtime / OpenCV 等，均为各自开源或商业许可，随构建产物附带许可声明。
 
-### 5. 项目起点
+### 5. 致谢
 
-工程骨架最初 fork 自 <https://github.com/crazylei12/Pokemon-Champions-dmg_cal>（MIT）。
-原作者提供的队伍码导入、Pokémon Showdown 文本导入导出、对局阵容识别、更新检查、数据备份等模块
-已在本项目中移除，仅保留其 MIT 许可与版权声明所要求的归属说明。
+最初参考自 <https://github.com/crazylei12/Pokemon-Champions-dmg_cal>（MIT）；应用层已整体重写，原项目的队伍码导入、Showdown 文本导入导出、阵容识别、更新检查、数据备份等模块均已移除，MIT 许可与版权声明见 `android/third_party/licenses/`。
 
 ---
 

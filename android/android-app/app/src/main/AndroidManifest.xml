@@ -1,8 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
-    <!-- Update checks are user-triggered and use GitHub Releases. ML Kit's
-         transitive network-state permission is not needed. -->
+    <!-- 应用完全离线运行，不需要网络状态权限；旧更新检查与 OCR 依赖已移除。 -->
     <uses-permission
         android:name="android.permission.ACCESS_NETWORK_STATE"
         tools:node="remove" />

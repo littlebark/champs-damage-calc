@@ -1254,46 +1254,28 @@ class OverlayCaptureService : Service() {
             onBusy = { showStatusChip("上一次识别尚未结束，请稍候") },
             onFailure = { message -> publish(message) },
         ) { frame, _ ->
-            val paddleLines = runCatching { paddleOcr?.recognize(frame) ?: emptyList() }.getOrElse { error ->
-                Log.e(LOG_TAG, "PaddleOCR failed, falling back to ML Kit", error)
+            val lines = runCatching { paddleOcr?.recognize(frame) ?: emptyList() }.getOrElse { error ->
+                Log.e(LOG_TAG, "PaddleOCR failed", error)
                 emptyList()
             }
-            if (paddleLines.isNotEmpty()) {
-                mainHandler.post {
-                    recycleOwnTeamFrame(frame)
-                    if (destroyed) return@post
-                    recognizing = false
-                    frameTrackingEnabled = true
-                    showAssistantEntry()
-                    logRecognition("paddle lines=" + paddleLines.size)
-                    val matched = matchSnapshot(paddleLines.filterNot { looksLikeHudText(it.text) })
-                    if (matched == null) {
-                        logRecognition("snapshot match FAILED (paddle)")
-                        publish("没认出双方或招式，请停在能看到四个招式的画面再点一次")
-                    } else {
-                        battleOverlayController.startSnapshotSession(matched.own, matched.moves, matched.opponent)
-                    }
+            mainHandler.post {
+                recycleOwnTeamFrame(frame)
+                if (destroyed) return@post
+                recognizing = false
+                frameTrackingEnabled = true
+                showAssistantEntry()
+                if (lines.isEmpty()) {
+                    logRecognition("paddle lines=0")
+                    publish("没读到画面文字，请停在能看到四个招式的画面再点一次")
+                    return@post
                 }
-                return@captureFrame
-            }
-            ocrEngine.recognizeSnapshotText(frame) callback@{ result ->
-                mainHandler.post {
-                    recycleOwnTeamFrame(frame)
-                    if (destroyed) return@post
-                    recognizing = false
-                    frameTrackingEnabled = true
-                    showAssistantEntry()
-                    result.onSuccess { lines ->
-                        val matched = matchSnapshot(lines.filterNot { looksLikeHudText(it.text) })
-                        if (matched == null) {
-                            publish("没认出双方或招式，请停在能看到四个招式的画面再点一次")
-                        } else {
-                            battleOverlayController.startSnapshotSession(matched.own, matched.moves, matched.opponent)
-                        }
-                    }.onFailure { error ->
-                        Log.e(LOG_TAG, "Snapshot recognition failed", error)
-                        publish("识别失败，请重试")
-                    }
+                logRecognition("paddle lines=" + lines.size)
+                val matched = matchSnapshot(lines.filterNot { looksLikeHudText(it.text) })
+                if (matched == null) {
+                    logRecognition("snapshot match FAILED (paddle)")
+                    publish("没认出双方或招式，请停在能看到四个招式的画面再点一次")
+                } else {
+                    battleOverlayController.startSnapshotSession(matched.own, matched.moves, matched.opponent)
                 }
             }
         }

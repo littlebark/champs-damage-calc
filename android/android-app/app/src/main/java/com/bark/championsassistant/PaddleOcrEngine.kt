@@ -13,7 +13,7 @@ import kotlin.math.roundToInt
 
 /**
  * PaddleOCR（PP-OCRv6 小模型）离线识别：DB 检测 + CTC 识别，模型放在 assets/ocr。
- * 相比 ML Kit，中文小字、描边字的准确率明显更高。
+ * 全应用唯一的 OCR 引擎，中文小字、描边字的识别都由它负责。
  */
 class PaddleOcrEngine(context: Context) : AutoCloseable {
     private val appContext = context.applicationContext

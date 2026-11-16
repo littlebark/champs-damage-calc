@@ -76,16 +76,6 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
-val mlKitLicenseArtifacts by configurations.creating {
-    isCanBeConsumed = false
-    isCanBeResolved = true
-}
-
-val mlKitLatinLicenseArtifacts by configurations.creating {
-    isCanBeConsumed = false
-    isCanBeResolved = true
-}
-
 val supportedAndroidAbis = listOf("arm64-v8a", "x86_64")
 val requestedAndroidAbis = providers.gradleProperty("androidAbis").orNull
     ?.split(',')
@@ -265,14 +255,6 @@ val syncLegalAssets by tasks.registering(Sync::class) {
         rename { "42arch-pokemon-dataset-zh-MIT.txt" }
         into("licenses")
     }
-    from({ mlKitLicenseArtifacts.files.map { zipTree(it) } }) {
-        include("third_party_licenses.json", "third_party_licenses.txt")
-        into("licenses/ml-kit")
-    }
-    from({ mlKitLatinLicenseArtifacts.files.map { zipTree(it) } }) {
-        include("third_party_licenses.json", "third_party_licenses.txt")
-        into("licenses/ml-kit/latin")
-    }
     into(layout.buildDirectory.dir("generated/legalAssets"))
 }
 
@@ -294,12 +276,8 @@ dependencies {
     implementation("androidx.window:window-java:1.5.1")
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.ui:ui-tooling-preview")
-    implementation("com.google.mlkit:text-recognition-chinese:16.0.1")
-    implementation("com.google.mlkit:text-recognition:16.0.1")
     implementation("com.microsoft.onnxruntime:onnxruntime-android:1.20.0")
     implementation("org.opencv:opencv:4.13.0")
-    add(mlKitLicenseArtifacts.name, "com.google.mlkit:text-recognition-chinese:16.0.1@aar")
-    add(mlKitLatinLicenseArtifacts.name, "com.google.mlkit:text-recognition:16.0.1@aar")
     debugImplementation("androidx.compose.ui:ui-tooling")
     implementation("com.google.android.play:integrity:1.6.0")
 

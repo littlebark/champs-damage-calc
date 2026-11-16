@@ -4,11 +4,6 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.Rect
-import com.google.android.gms.tasks.Tasks
-import com.google.mlkit.vision.common.InputImage
-import com.google.mlkit.vision.text.TextRecognition
-import com.google.mlkit.vision.text.chinese.ChineseTextRecognizerOptions
-import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -19,7 +14,6 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 import java.util.concurrent.CancellationException
 import java.util.concurrent.Future
-import java.util.concurrent.TimeUnit
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
@@ -195,7 +189,7 @@ data class RecognitionEntity(
         put("displayName", displayName)
         put("originalText", originalText)
         put("confidence", confidence)
-        put("source", "ocr_android_mlkit")
+        put("source", "ocr_paddle")
     }
 
     companion object {
@@ -341,9 +335,22 @@ private fun RecognitionEntity.toEntityValue(): EntityValue =
 class OwnTeamOcrEngine(context: Context, private val paddle: PaddleOcrEngine? = null) : AutoCloseable {
     private val appContext = context.applicationContext
     private val tasks = CloseSafeSerialExecutor()
-    private val recognizer = TextRecognition.getClient(ChineseTextRecognizerOptions.Builder().build())
-    private val statRecognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
     private val catalog = EntityCatalog(appContext)
+
+    /** PaddleOCR 整屏行。引擎未就绪或读不到文字时直接报错，不再走其它 OCR 引擎兜底。 */
+    private fun paddleLines(bitmap: Bitmap): List<SnapshotTextLine> {
+        val engine = paddle ?: error("OCR 引擎未就绪")
+        val lines = try {
+            engine.recognize(bitmap)
+        } catch (e: Exception) {
+            throw IllegalStateException("OCR 识别失败：${e.message}", e)
+        }
+        if (lines.isEmpty()) error("没有识别到画面文字")
+        return lines
+    }
+
+    /** PaddleOCR 读出的纯文本，按行用换行连接。 */
+    private fun paddleText(bitmap: Bitmap): String = paddleLines(bitmap).joinToString("\n") { it.text }
 
     fun recognize(
         bitmap: Bitmap,
@@ -383,24 +390,7 @@ class OwnTeamOcrEngine(context: Context, private val paddle: PaddleOcrEngine? = 
         callback: (Result<List<SnapshotTextLine>>) -> Unit,
     ): Future<*>? {
         val task = tasks.submitCancellable {
-            val result = runCatching {
-                val lines = ArrayList<SnapshotTextLine>()
-                Tasks.await(recognizer.process(InputImage.fromBitmap(bitmap, 0))).textBlocks.forEach { block ->
-                    block.lines.forEach { line ->
-                        val box = line.boundingBox ?: return@forEach
-                        lines += SnapshotTextLine(
-                            text = line.text,
-                            left = box.left,
-                            top = box.top,
-                            right = box.right,
-                            bottom = box.bottom,
-                            imageWidth = bitmap.width,
-                            imageHeight = bitmap.height,
-                        )
-                    }
-                }
-                lines
-            }
+            val result = runCatching { paddleLines(bitmap) }
             callback(result)
         }
         if (task == null) callback(Result.failure(CancellationException("识别器已关闭")))
@@ -414,21 +404,7 @@ class OwnTeamOcrEngine(context: Context, private val paddle: PaddleOcrEngine? = 
     ): Future<*>? {
         val task = tasks.submitCancellable {
             val result = runCatching {
-                val lines = ArrayList<SnapshotTextLine>()
-                Tasks.await(recognizer.process(InputImage.fromBitmap(bitmap, 0))).textBlocks.forEach { block ->
-                    block.lines.forEach { line ->
-                        val box = line.boundingBox ?: return@forEach
-                        lines += SnapshotTextLine(
-                            text = line.text,
-                            left = box.left,
-                            top = box.top,
-                            right = box.right,
-                            bottom = box.bottom,
-                            imageWidth = bitmap.width,
-                            imageHeight = bitmap.height,
-                        )
-                    }
-                }
+                val lines = paddleLines(bitmap)
                 val stats = statsFromLines(lines)
                 when {
                     stats != null &&
@@ -472,16 +448,9 @@ class OwnTeamOcrEngine(context: Context, private val paddle: PaddleOcrEngine? = 
 
 
     private fun recognizeSingleStatsBlocking(bitmap: Bitmap): SingleStatsRecord {
-        paddle?.let { engine ->
-            runCatching {
-                val lines = engine.recognize(bitmap)
-                if (lines.isNotEmpty()) {
-                    val fromPaddle = statsFromLines(lines)
-                    if (fromPaddle != null) return fromPaddle
-                }
-            }.onFailure { android.util.Log.e("OwnTeamOcr", "Paddle stats recognition failed", it) }
-        }
-        return recognizeSingleStatsWithMlKit(bitmap)
+        val fromPaddle = statsFromLines(paddleLines(bitmap))
+            ?: error("没有识别到能力值面板")
+        return fromPaddle
     }
 
     /** 从 PaddleOCR 的整屏行里取出六项能力值和加点：标签行本身的数字，或紧邻其右侧的数字列。 */
@@ -569,96 +538,17 @@ class OwnTeamOcrEngine(context: Context, private val paddle: PaddleOcrEngine? = 
         return candidates.firstOrNull()
     }
 
-    private fun recognizeSingleStatsWithMlKit(bitmap: Bitmap): SingleStatsRecord {
-        val text = Tasks.await(
-            recognizer.process(InputImage.fromBitmap(bitmap, 0)),
-            30,
-            TimeUnit.SECONDS,
-        )
-        val values = linkedMapOf<String, Int>()
-        val points = linkedMapOf<String, Int>()
-        text.textBlocks.flatMap { block -> block.lines }.forEach { line ->
-            val tokens = line.elements.mapNotNull { element ->
-                element.boundingBox?.let { Token(element.text.replace(" ", ""), it) }
-            }.filter { it.text.isNotBlank() }
-            val labelIndex = tokens.indexOfFirst { token ->
-                SINGLE_STAT_LABELS.any { label -> token.text.contains(label.first) }
-            }
-            if (labelIndex < 0) return@forEach
-            val key = SINGLE_STAT_LABELS.first { (label, _) -> tokens[labelIndex].text.contains(label) }.second
-            if (values.containsKey(key)) return@forEach
-            val labelTokenNumbers = Regex("""\d{1,3}""").findAll(tokens[labelIndex].text)
-                .mapNotNull { it.value.toIntOrNull() }.toList()
-            val rightNumbers = tokens.drop(labelIndex + 1)
-                .flatMap { token -> Regex("""\d{1,3}""").findAll(token.text).mapNotNull { it.value.toIntOrNull() }.toList() }
-            val numbers = (labelTokenNumbers + rightNumbers).filter { it in 0..999 }
-            if (numbers.isEmpty()) return@forEach
-            values[key] = numbers.first()
-            numbers.getOrNull(1)?.takeIf { it in 0..32 }?.let { points[key] = it }
-        }
-        if (values.size < 4) {
-            android.util.Log.i(
-                "OwnTeamOcr",
-                "Single stats OCR lines: " + text.textBlocks.flatMap { block -> block.lines }
-                    .take(20).joinToString(" | ") { it.text },
-            )
-            error("没有识别到能力值面板")
-        }
-        val actual = StatFields(
-            hp = values["hp"]?.toString() ?: "",
-            atk = values["atk"]?.toString() ?: "",
-            def = values["def"]?.toString() ?: "",
-            spa = values["spa"]?.toString() ?: "",
-            spd = values["spd"]?.toString() ?: "",
-            spe = values["spe"]?.toString() ?: "",
-        )
-        val allocated = StatFields(
-            hp = points["hp"]?.toString() ?: "0",
-            atk = points["atk"]?.toString() ?: "0",
-            def = points["def"]?.toString() ?: "0",
-            spa = points["spa"]?.toString() ?: "0",
-            spd = points["spd"]?.toString() ?: "0",
-            spe = points["spe"]?.toString() ?: "0",
-        )
-        return SingleStatsRecord(actual, allocated)
-    }
 
     private fun recognizeBlocking(
         bitmap: Bitmap,
         expectedType: OwnTeamPageType?,
     ): RecognizedOwnTeamPage {
         val cards = TeamCardDetector.detect(bitmap)
-        // 队伍页现在走 PaddleOCR 优先：它对中文小字、带描边的游戏字体比 ML Kit 稳。
-        val paddleCards = runCatching { paddleCardLines(bitmap, cards) }
-            .onFailure { android.util.Log.e("OwnTeamOcr", "Paddle team-page recognition failed", it) }
-            .getOrNull()
-        if (paddleCards != null && paddleCards.count { it.lines.isNotEmpty() } >= 2) {
-            return buildRecognizedPage(paddleCards, cards, bitmap, expectedType)
-        }
-        val cardResults = cards.map { card ->
-            val crop = Bitmap.createBitmap(bitmap, card.left, card.top, card.width(), card.height())
-            try {
-                val text = Tasks.await(
-                    recognizer.process(InputImage.fromBitmap(crop, 0)),
-                    30,
-                    TimeUnit.SECONDS,
-                )
-                val lines = text.textBlocks.flatMap { block -> block.lines }.mapNotNull { line ->
-                    val rect = line.boundingBox ?: return@mapNotNull null
-                    OcrLine(
-                        text = normalizeText(line.text),
-                        rect = rect,
-                        tokens = line.elements.mapNotNull { element ->
-                            element.boundingBox?.let { Token(normalizeText(element.text), it) }
-                        }.filter { it.text.isNotBlank() },
-                    )
-                }.filter { it.text.isNotBlank() }
-                OcrCard(card.width(), card.height(), lines)
-            } finally {
-                crop.recycle()
-            }
-        }
-        return buildRecognizedPage(cardResults, cards, bitmap, expectedType)
+        if (cards.isEmpty()) error("没有找到队伍卡片，请确认停留在队伍状态页")
+        val paddleCards = paddleCardLines(bitmap, cards)
+            ?: error("没有识别到队伍页文字")
+        if (paddleCards.count { it.lines.isNotEmpty() } < 2) error("队伍页文字过少，请让六只宝可梦完整显示后重试")
+        return buildRecognizedPage(paddleCards, cards, bitmap, expectedType)
     }
 
     /** 用 PaddleOCR 的整屏行，按队伍卡片切成卡片内的行（坐标改回卡片局部坐标）。 */
@@ -772,12 +662,9 @@ class OwnTeamOcrEngine(context: Context, private val paddle: PaddleOcrEngine? = 
             if (scaled !== crop) crop.recycle()
             return try {
                 fun recognizeCandidates(bitmap: Bitmap): List<RecognitionEntity> {
-                    val text = Tasks.await(
-                        recognizer.process(InputImage.fromBitmap(bitmap, 0)),
-                        20,
-                        TimeUnit.SECONDS,
-                    )
-                    return (text.textBlocks.flatMap { block -> block.lines }.map { it.text } + text.text)
+                    val text = runCatching { paddleText(bitmap) }.getOrNull().orEmpty()
+                    if (text.isBlank()) return emptyList()
+                    return text.split("\n")
                         .mapNotNull { catalog.resolve(normalizeText(it), entityType) }
                 }
                 val originalCandidates = recognizeCandidates(scaled)
@@ -902,11 +789,9 @@ class OwnTeamOcrEngine(context: Context, private val paddle: PaddleOcrEngine? = 
         value <= 500 && if (stat == "hp") value >= 1 else value >= 10
 
     private fun readStatValue(bitmap: Bitmap, stat: String): Int? {
-        val text = Tasks.await(
-            statRecognizer.process(InputImage.fromBitmap(bitmap, 0)),
-            20,
-            TimeUnit.SECONDS,
-        ).text.replace(Regex("[Il|!]"), "1").replace(Regex("[Oo]"), "0")
+        val text = runCatching { paddleText(bitmap) }.getOrNull().orEmpty()
+            .replace(Regex("[Il|!]"), "1")
+            .replace(Regex("[Oo]"), "0")
         return Regex("\\d{1,3}").findAll(text).mapNotNull { it.value.toIntOrNull() }
             .filter { value -> if (stat == "hp") value >= 1 else value >= 10 }
             .sortedWith(compareByDescending<Int> { it > 32 }.thenByDescending { it })
@@ -1104,10 +989,8 @@ class OwnTeamOcrEngine(context: Context, private val paddle: PaddleOcrEngine? = 
     }
 
     override fun close() {
-        tasks.closeAfterPending {
-            recognizer.close()
-            statRecognizer.close()
-        }
+        // PaddleOCR 引擎由调用方持有，这里只结束自己的任务队列。
+        tasks.closeAfterPending { }
     }
 }
 
@@ -1604,7 +1487,7 @@ class OwnTeamImportRepository(private val context: Context) {
             put("generatedAt", now.toString())
             put("createdAt", now.toString())
             put("updatedAt", now.toString())
-            put("source", JSONObject().put("backend", "android_mlkit_chinese_bundled")
+            put("source", JSONObject().put("backend", "paddleocr_ppocr_v6")
                 .put("moveItemCapture", move.capturedAt).put("statsCapture", stats.capturedAt))
             put("members", members)
             put("warnings", JSONArray())
@@ -1654,7 +1537,7 @@ class OwnTeamImportRepository(private val context: Context) {
             put("createdAt", now.toString())
             put("updatedAt", now.toString())
             put("source", JSONObject().apply {
-                put("backend", "android_mlkit_chinese_bundled")
+                put("backend", "paddleocr_ppocr_v6")
                 put("moveItemCapture", draft.moveItemCapturedAt)
                 put("statsCapture", draft.statsCapturedAt)
                 put("moveItemRecognized", draft.moveRecognized)
