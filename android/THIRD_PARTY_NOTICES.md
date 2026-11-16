@@ -6,9 +6,10 @@ When an Android APK is built, the project copies these notices and license texts
 
 ## Project license scope
 
-The Android application code in this repository was originally forked from
-<https://github.com/crazylei12/Pokemon-Champions-dmg_cal> (MIT), whose original copyright notice is retained.
-Subsequent application-layer work (UI, overlay, OCR business flow, recognition and correction logic, storage)
+This project's own source code is released under the MIT License in the repository-root `LICENSE` file
+(copyright © 2026 littlebark). The Android application code was originally forked from
+<https://github.com/crazylei12/Pokemon-Champions-dmg_cal> (MIT), whose original copyright notice is retained;
+subsequent application-layer work (UI, overlay, OCR business flow, recognition and correction logic, storage)
 is authored for this project.
 
 This license scope applies only to material the project authors have the right to license. It does not relicense
