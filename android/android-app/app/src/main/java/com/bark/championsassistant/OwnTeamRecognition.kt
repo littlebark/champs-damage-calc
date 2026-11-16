@@ -174,6 +174,28 @@ internal fun discardOwnTeamImportFiles(filesDir: File) {
 internal fun shouldResetAfterEmptyFirstOwnTeamPage(page: RecognizedOwnTeamPage): Boolean =
     page.type == OwnTeamPageType.MOVE_ITEM && page.recognized == 0
 
+/** 游戏里的性别符号；字典里本来就有这两个字符，Paddle 会把它们识别成普通文字。 */
+internal const val GENDER_MALE_MARK = '\u2642'
+internal const val GENDER_FEMALE_MARK = '\u2640'
+
+/** 从整行文字里读性别符号；同时出现或都没有时返回 null。 */
+internal fun detectGenderMark(raw: String): String? = when {
+    raw.contains(GENDER_FEMALE_MARK) && !raw.contains(GENDER_MALE_MARK) -> "F"
+    raw.contains(GENDER_MALE_MARK) && !raw.contains(GENDER_FEMALE_MARK) -> "M"
+    else -> null
+}
+
+/** 去掉性别符号与升降箭头，避免它们干扰名字匹配。 */
+internal fun stripGenderMarks(raw: String): String =
+    raw.filterNot { it == GENDER_MALE_MARK || it == GENDER_FEMALE_MARK || it == '\u25B2' || it == '\u25BC' }
+
+/**
+ * 性别分化形态：超能妙喵、爱管侍、幽尾玄鱼这类宝可梦雌雄是两条独立记录
+ * （种族值、特性、可学招式都不同），识别到 ♀ 时必须落到「-F」形态，否则算出来的是雄性的数据。
+ */
+internal fun femaleVariantShowdownId(showdownId: String, available: Set<String>): String? =
+    "$showdownId-F".takeIf { it in available }
+
 data class RecognitionEntity(
     val entityType: String,
     val canonicalId: String,
@@ -181,6 +203,8 @@ data class RecognitionEntity(
     val displayName: String,
     val originalText: String,
     val confidence: Double,
+    /** "M" / "F"；只有从画面上读到性别符号时才有值。 */
+    val gender: String? = null,
 ) {
     fun toJson() = JSONObject().apply {
         put("entityType", entityType)
@@ -189,6 +213,7 @@ data class RecognitionEntity(
         put("displayName", displayName)
         put("originalText", originalText)
         put("confidence", confidence)
+        gender?.let { put("gender", it) }
         put("source", "ocr_paddle")
     }
 
@@ -200,6 +225,7 @@ data class RecognitionEntity(
             displayName = json.optString("displayName", json.getString("showdownId")),
             originalText = json.optString("originalText"),
             confidence = json.optDouble("confidence", 0.0),
+            gender = json.optString("gender").takeIf(String::isNotBlank),
         )
     }
 }
@@ -1045,6 +1071,7 @@ private fun pickNumber(card: OcrCard, region: DoubleArray, stat: String): Int? {
 internal class EntityCatalog(context: Context) {
     private data class Alias(val normalized: String, val exactLocalized: Boolean, val entity: RecognitionEntity)
     private val byType: Map<String, List<Alias>>
+    private val speciesByShowdownId: Map<String, RecognitionEntity>
 
     init {
         val array = JSONArray(context.assets.open("recognition/zh-Hans.json").bufferedReader().use { it.readText() })
@@ -1073,6 +1100,8 @@ internal class EntityCatalog(context: Context) {
             }
         }
         byType = mutable
+        speciesByShowdownId = mutable["species"].orEmpty()
+            .associate { it.entity.showdownId to it.entity }
     }
 
     /**
@@ -1085,7 +1114,9 @@ internal class EntityCatalog(context: Context) {
     }
 
     fun resolve(rawText: String, type: String): RecognitionEntity? {
-        val input = normalizeLookup(rawText)
+        val gender = if (type == "species") detectGenderMark(rawText) else null
+        val cleaned = if (type == "species") stripGenderMarks(rawText) else rawText
+        val input = normalizeLookup(cleaned)
         if (input.isBlank()) return null
         val candidates = byType[type].orEmpty().mapNotNull { alias ->
             val inputs = buildList {
@@ -1103,8 +1134,25 @@ internal class EntityCatalog(context: Context) {
             } }
             if (confidence == 0.0) null else alias.entity.copy(originalText = rawText, confidence = confidence)
         }
-        return candidates.firstOrNull { it.confidence == 1.0 }
+        val resolved = candidates.firstOrNull { it.confidence == 1.0 }
             ?: selectUnambiguousRecognitionEntity(candidates)
+            ?: return null
+        return applyGenderForm(resolved, gender)
+    }
+
+    /** ♀ 且该物种有雌性独立形态时，替换成「-F」形态；否则只把读到的性别记在实体上。 */
+    private fun applyGenderForm(entity: RecognitionEntity, gender: String?): RecognitionEntity {
+        if (gender == null) return entity
+        if (entity.entityType != "species") return entity.copy(gender = gender)
+        val femaleId = femaleVariantShowdownId(entity.showdownId, speciesByShowdownId.keys)
+            ?: return entity.copy(gender = gender)
+        if (gender != "F") return entity.copy(gender = gender)
+        val female = speciesByShowdownId[femaleId] ?: return entity.copy(gender = gender)
+        return female.copy(
+            originalText = entity.originalText,
+            confidence = entity.confidence,
+            gender = gender,
+        )
     }
 }
 
@@ -1444,6 +1492,7 @@ class OwnTeamImportRepository(private val context: Context) {
                 put("slotIndex", statSlot.slotIndex)
                 put("species", species.toJson())
                 put("level", 50)
+                species.gender?.let { put("gender", it) }
                 put("actualStats", JSONObject().apply { statSlot.actualStats.forEach(::put) })
                 moveSlot.ability?.let { put("ability", it.toJson()) }
                 moveSlot.item?.let { put("item", it.toJson()) }

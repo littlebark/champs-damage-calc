@@ -90,6 +90,31 @@ class OwnTeamRecognitionTest {
         assertEquals(listOf(0.71 to 0.86, 0.70 to 0.885), right)
     }
 
+    @Test
+    fun genderMarksAreStrippedBeforeNameMatching() {
+        assertEquals("超能妙喵", stripGenderMarks("超能妙喵 ♀").trim())
+        assertEquals("爱管侍", stripGenderMarks("爱管侍\u2642").trim())
+        assertEquals("长毛巨魔", stripGenderMarks("长毛巨魔 \u2642 \u25BC").trim())
+        assertEquals("Meowstic-F", stripGenderMarks("Meowstic-F"))
+    }
+
+    @Test
+    fun genderMarkIsReadFromTheSpeciesLine() {
+        assertEquals("F", detectGenderMark("超能妙喵 ♀"))
+        assertEquals("M", detectGenderMark("超能妙喵 ♂"))
+        assertNull(detectGenderMark("超能妙喵"))
+        assertNull(detectGenderMark("超能妙喵 ♂ ♀"))
+    }
+
+    @Test
+    fun femaleVariantOnlyAppliesToGenderDimorphicSpecies() {
+        val roster = setOf("Meowstic", "Meowstic-F", "Indeedee", "Indeedee-F", "Pikachu")
+        assertEquals("Meowstic-F", femaleVariantShowdownId("Meowstic", roster))
+        assertEquals("Indeedee-F", femaleVariantShowdownId("Indeedee", roster))
+        assertNull(femaleVariantShowdownId("Pikachu", roster))
+        assertNull(femaleVariantShowdownId("Meowstic-F", roster))
+    }
+
     private fun entity(canonicalId: String, showdownId: String, rawText: String, confidence: Double) =
         RecognitionEntity(
             entityType = "species",
