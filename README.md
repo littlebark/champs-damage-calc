@@ -64,7 +64,7 @@ cd android\android-app
 
 ### 3. OCR 模型
 
-- `android/android-app/app/src/main/assets/ocr/PP-OCRv6_det_small.onnx`、`PP-OCRv6_rec_small.onnx`、`keys.txt`
+- `android/android-app/app/src/main/assets/ocr/det.onnx`（约 9.5 MB，文本检测）、`rec.onnx`（约 20 MB，文本识别）、`keys.txt`（字典）
 - 上游：<https://github.com/PaddlePaddle/PaddleOCR>（Apache-2.0）
 - 许可副本：`android/third_party/licenses/APACHE-2.0.txt`
 - 另有 Google ML Kit 文本识别作为兜底，条款见 `android/third_party/licenses/ml-kit-TERMS.txt`
