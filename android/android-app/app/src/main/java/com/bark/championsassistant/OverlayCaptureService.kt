@@ -821,15 +821,9 @@ class OverlayCaptureService : Service() {
      * 「关闭」+ 这只宝可梦的全部 Mega 形态。列表也允许在没有 Mega 时提示换人后重新识别。
      */
     private fun onOpponentMegaChip() {
-        val (base, forms) = battleOverlayController.opponentMegaOptions()
-        if (base != null && forms.isEmpty()) {
-            showStatusChip("当前识别到的对手没有超级进化形态；若已换人，请重新识别")
-            return
-        }
-        if (forms.isEmpty()) {
-            showStatusChip("先按一次「计算伤害」，知道对手是谁才能选超级进化")
-            return
-        }
+        val (_, forms) = battleOverlayController.opponentMegaOptions()
+        // 对手当前这只没有 Mega：不提示，点了就当没点，按不 mega 计算。
+        if (forms.isEmpty()) return
         val anchor = opponentMegaChip ?: bubble ?: return
         val density = overlayWindowContext.resources.displayMetrics.density
         fun px(value: Int) = (value * density).toInt()

@@ -756,7 +756,13 @@ internal class BattleOverlayController(
         val base = ownBaseSpecies(directContext, state) ?: return
         val options = presetRepository.megaFormsFor(base)
         if (options.isEmpty()) {
-            publish("这只宝可梦没有超级进化形态")
+            // 没有 Mega 形态或对不上：不提示、不弹窗，就当没点，按不 mega 计算。
+            val cleared = state.copy(
+                ownMega = false,
+                ownMegaFormId = null,
+                ownFormOverrides = state.ownFormOverrides - state.ownSlot,
+            )
+            if (state.ownMega) applyMegaChange(directContext, cleared, "") else Unit
             return
         }
         val picked = if (state.ownMega) {
@@ -786,7 +792,13 @@ internal class BattleOverlayController(
             presetRepository.megaFormsFor(base).firstOrNull { it.showdownId == id }
         }
         if (formId != null && picked == null) {
-            publish("这只宝可梦没有这个超级进化形态")
+            // 选了一个这只宝可梦没有的形态：不提示，直接按不 mega 算。
+            val cleared = state.copy(
+                opponentMega = false,
+                opponentMegaFormId = null,
+                opponentFormOverrides = state.opponentFormOverrides - state.opponentSlot,
+            )
+            applyMegaChange(directContext, cleared, "")
             return
         }
         val newState = state.copy(
@@ -808,7 +820,7 @@ internal class BattleOverlayController(
         battleContextCache = updated
         directDamageCache.clear()
         directCalculationGeneration++
-        publish(message)
+        if (message.isNotBlank()) publish(message)
         if (directOverlay.isVisible) showDirectHud(updated)
     }
 
@@ -983,10 +995,9 @@ internal class BattleOverlayController(
     }
 
     fun showDirectHudEntry(revealHiddenHud: Boolean = true) {
-        if (hasSession) {
-            if (revealHiddenHud) revealDirectHud() else showDirectHud()
-            if (directOverlay.isVisible) return
-        }
+        // 启动助手时不再恢复上一局的会话：对手数据留在磁盘里会误导（还没进对局就显示上一局的宝可梦）。
+        // 真正的对局数据只由这一次「计算伤害 / 识别队伍」重新识别生成。
+        directCalculationGeneration++
         directOverlay.show(BattleDirectHudModel(
             battleType = "SINGLE",
             ownTeamNames = emptyList(),
