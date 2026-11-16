@@ -268,12 +268,16 @@ internal class BattleOverlayController(
             hideDirectHud()
             return
         }
+        val readGender = loadout.species?.gender ?: base.gender ?: base.species.gender
         val updated = base.copy(
             moves = loadout.moves.ifEmpty { base.moves.map { it.entity } }
                 .take(4)
                 .map { entity -> base.moves.firstOrNull { it.entity.showdownId == entity.showdownId } ?: MoveValue(entity = entity) },
             ability = loadout.ability ?: base.ability,
             item = loadout.item ?: base.item,
+            // 能力页读到 ♂/♀ 就补上性别，斗争心这类按性别判定的特性要用；物种本身不变。
+            gender = readGender,
+            species = if (readGender == null) base.species else base.species.copy(gender = readGender),
         )
         runCatching { TeamRepository.upsertMyPokemon(context, listOf(updated)) }
             .onSuccess {
@@ -641,7 +645,13 @@ internal class BattleOverlayController(
     /**
      * 选招页一键计算：只用画面识别到的我方当前宝可梦、四个招式和对手，直接开 HUD，不需要先确认阵容。
      */
-    fun startSnapshotSession(ownSpecies: EntityValue, moves: List<MoveValue>, opponent: EntityValue) {
+    fun startSnapshotSession(
+        ownSpecies: EntityValue,
+        moves: List<MoveValue>,
+        opponent: EntityValue,
+        weather: String = "NONE",
+        terrain: String = "NONE",
+    ) {
         val localizedOwn = presetRepository.localizeSpecies(ownSpecies)
         val localizedOpponent = presetRepository.localizeSpecies(opponent)
         val containingMoves = moves.take(4).ifEmpty {
@@ -680,6 +690,10 @@ internal class BattleOverlayController(
                 battleType = "SINGLE",
                 spread = false,
                 ownSlot = slot,
+                // 左上角读到的天气/场地只描述这一回合，每次点「计算伤害」都会重新读一遍画面，
+                // 场地结束后再点一次就会自动清掉。
+                weather = weather,
+                terrain = terrain,
                 // 快照流程就是「按当前画面算伤害」，必须一进来就是计算模式，
                 // 否则 HUD 只会摆空红框，数字永远不排下去。
                 directHud = BattleDirectHudState(mode = BattleDirectHudMode.CALCULATION),

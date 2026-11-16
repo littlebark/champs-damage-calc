@@ -347,6 +347,8 @@ data class LoadoutRecord(
     val moves: List<EntityValue> = emptyList(),
     val ability: EntityValue? = null,
     val item: EntityValue? = null,
+    /** 能力页上读到的「这是哪只 + 性别」，只用来补性别，不改动已有记录的身份。 */
+    val species: EntityValue? = null,
 )
 
 /** 「识别当前」的结果：停在“状态”页读数值，停在“能力”页读招式/特性/持有物。 */
@@ -475,7 +477,17 @@ class OwnTeamOcrEngine(context: Context, private val paddle: PaddleOcrEngine? = 
             if (moves.size >= 4 && ability != null && item != null) break
         }
         if (moves.isEmpty() && ability == null && item == null) return null
-        return LoadoutRecord(moves = moves.values.toList(), ability = ability, item = item)
+        // 能力页左上/顶部也会写名字和 ♂/♀，顺手读出来补性别（没读到就是 null）。
+        val genderedSpecies = lines.asSequence()
+            .filter { detectGenderMark(it.text) != null }
+            .mapNotNull { catalog.resolve(it.text, "species")?.toEntityValue() }
+            .firstOrNull()
+        return LoadoutRecord(
+            moves = moves.values.toList(),
+            ability = ability,
+            item = item,
+            species = genderedSpecies,
+        )
     }
 
 

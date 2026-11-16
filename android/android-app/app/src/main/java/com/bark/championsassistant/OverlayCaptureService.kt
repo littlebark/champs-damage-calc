@@ -1275,7 +1275,13 @@ class OverlayCaptureService : Service() {
                     logRecognition("snapshot match FAILED (paddle)")
                     publish("没认出双方或招式，请停在能看到四个招式的画面再点一次")
                 } else {
-                    battleOverlayController.startSnapshotSession(matched.own, matched.moves, matched.opponent)
+                    battleOverlayController.startSnapshotSession(
+                    matched.own,
+                    matched.moves,
+                    matched.opponent,
+                    matched.weather,
+                    matched.terrain,
+                )
                 }
             }
         }
@@ -1285,6 +1291,26 @@ class OverlayCaptureService : Service() {
         val own: EntityValue,
         val opponent: EntityValue,
         val moves: List<MoveValue>,
+        /** 画面左上角读到的天气/场地，只在这一次快照里生效（有回合限制，不写进以后的计算）。 */
+        val weather: String = "NONE",
+        val terrain: String = "NONE",
+    )
+
+    /** 与 BATTLE_TERRAIN_VALUES / BATTLE_WEATHER_VALUES 对齐的画面文案。 */
+    private val SNAPSHOT_TERRAIN_KEYWORDS = listOf(
+        "精神场地" to "Psychic",
+        "电气场地" to "Electric",
+        "青草场地" to "Grassy",
+        "薄雾场地" to "Misty",
+    )
+    private val SNAPSHOT_WEATHER_KEYWORDS = listOf(
+        "沙暴" to "Sand",
+        "晴天" to "Sun",
+        "下雨" to "Rain",
+        "雨天" to "Rain",
+        "下雪" to "Snow",
+        "雪天" to "Snow",
+        "冰雹" to "Snow",
     )
 
     /**
@@ -1385,7 +1411,24 @@ class OverlayCaptureService : Service() {
             moveLines.take(4)
         }
         Log.i(LOG_TAG, "Snapshot matched: own=${own.displayName} opponent=${opponent.displayName} moves=${moves.map { it.entity.displayName }}")
-        return SnapshotMatch(own, opponent, moves)
+        // 回合开始后左上角会写「精神场地状态 5/5」「沙暴状态 4/5」这类字段效果，
+        // 只有有限回合，所以只带到这一次计算里，不沿用。
+        val terrain = lines.firstOrNull { line ->
+            line.top < imageHeight * 0.18 && line.left < imageWidth * 0.5 &&
+                SNAPSHOT_TERRAIN_KEYWORDS.any { keyword -> line.text.contains(keyword.first) }
+        }?.let { line ->
+            SNAPSHOT_TERRAIN_KEYWORDS.first { keyword -> line.text.contains(keyword.first) }.second
+        } ?: "NONE"
+        val weather = lines.firstOrNull { line ->
+            line.top < imageHeight * 0.18 && line.left < imageWidth * 0.5 &&
+                SNAPSHOT_WEATHER_KEYWORDS.any { keyword -> line.text.contains(keyword.first) }
+        }?.let { line ->
+            SNAPSHOT_WEATHER_KEYWORDS.first { keyword -> line.text.contains(keyword.first) }.second
+        } ?: "NONE"
+        if (weather != "NONE" || terrain != "NONE") {
+            Log.i(LOG_TAG, "Snapshot field: weather=$weather terrain=$terrain")
+        }
+        return SnapshotMatch(own, opponent, moves, weather, terrain)
     }
 
     private fun resetOwnTeamImportAfterEmptyFirstPage(reason: String) {        runCatching { importRepository.discardCurrentImport() }
