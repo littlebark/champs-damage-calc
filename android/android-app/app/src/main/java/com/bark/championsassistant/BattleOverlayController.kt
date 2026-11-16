@@ -647,12 +647,20 @@ internal class BattleOverlayController(
     )
 
     fun megaChips(): MegaChipState {
+        val pendingSuffix = pendingOpponentMegaSuffix()
         val directContext = battleContextCache ?: runCatching { sessionRepository.loadSession() }.getOrNull()
             ?.let { session ->
                 val teams = runCatching { TeamRepository.load(context) }.getOrDefault(emptyList())
                 val team = teams.firstOrNull { it.id == session.selectedOwnTeamId }
                 if (team == null) null else BattleContext(session, teams, team)
-            } ?: return MegaChipState()
+            } ?: return MegaChipState(
+            ownLabel = "我方MEGA",
+            ownOn = false,
+            ownAvailable = true,
+            opponentLabel = opponentChipLabel(pendingSuffix),
+            opponentOn = pendingSuffix != null,
+            opponentAvailable = true,
+        )
         val state = directContext.session.calculation
         val ownBase = ownBaseSpecies(directContext, state)
         val opponentBase = opponentBaseSpecies(directContext.session, state)
@@ -663,26 +671,31 @@ internal class BattleOverlayController(
             ownAvailable = ownBase == null || ownOptions.isNotEmpty(),
             // 对手永远可点：可能已经换人、也可能我们看错了，不能因为当前这只没有 Mega 就锁死。
             opponentLabel = if (state.opponentMega) {
-                "对方M${megaSuffix(state.opponentFormOverrides[state.opponentSlot])}"
+                opponentChipLabel(state.opponentMegaSuffix ?: megaSuffix(state.opponentFormOverrides[state.opponentSlot]))
             } else {
-                "对方MEGA"
+                opponentChipLabel(pendingSuffix)
             },
-            opponentOn = state.opponentMega,
+            opponentOn = state.opponentMega || pendingSuffix != null,
             opponentAvailable = true,
         )
     }
 
-    /** 「识别到的对手能超级进化成哪些形态」——给对手选择列表用。 */
-    fun opponentMegaOptions(): Pair<EntityValue?, List<EntityValue>> {
-        val directContext = battleContextCache ?: runCatching { sessionRepository.loadSession() }.getOrNull()
-            ?.let { session ->
-                val teams = runCatching { TeamRepository.load(context) }.getOrDefault(emptyList())
-                val team = teams.firstOrNull { it.id == session.selectedOwnTeamId }
-                if (team == null) null else BattleContext(session, teams, team)
-            } ?: return null to emptyList()
-        val state = directContext.session.calculation
-        val base = opponentBaseSpecies(directContext.session, state)
-        return base to base?.let(presetRepository::megaFormsFor).orEmpty()
+    /** 还没进对局时玩家先选的「对方用哪类 Mega」，存在偏好里等计算伤害时消费。 */
+    fun pendingOpponentMegaSuffix(): String? =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getString(KEY_OPPONENT_MEGA_SUFFIX, null)
+
+    private fun storePendingOpponentMegaSuffix(suffix: String?) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+            .apply {
+                if (suffix == null) remove(KEY_OPPONENT_MEGA_SUFFIX) else putString(KEY_OPPONENT_MEGA_SUFFIX, suffix)
+            }
+            .apply()
+    }
+
+    private fun opponentChipLabel(suffix: String?): String = when (suffix) {
+        null, "" -> "对方MEGA"
+        else -> "对方M-" + suffix.uppercase()
     }
 
     private fun ownChipLabel(base: EntityValue?, state: BattleCalculationState): String {
@@ -782,35 +795,40 @@ internal class BattleOverlayController(
         applyMegaChange(directContext, newState, if (picked == null) "我方超级进化已关闭" else "我方按 ${picked.displayName} 计算")
     }
 
-    /** 对手：不知道道具，可能 X 也可能 Y，所以由玩家从列表里直接选（也可以关闭）。 */
-    fun setOpponentMega(formId: String?) {
-        val directContext = loadDirectHudContext() ?: return
-        val session = directContext.session
-        val state = session.calculation
-        val base = opponentBaseSpecies(session, state) ?: return
-        val picked = formId?.let { id ->
-            presetRepository.megaFormsFor(base).firstOrNull { it.showdownId == id }
-        }
-        if (formId != null && picked == null) {
-            // 选了一个这只宝可梦没有的形态：不提示，直接按不 mega 算。
-            val cleared = state.copy(
-                opponentMega = false,
-                opponentMegaFormId = null,
-                opponentFormOverrides = state.opponentFormOverrides - state.opponentSlot,
-            )
-            applyMegaChange(directContext, cleared, "")
+    /**
+     * 对手：玩家只知道「他用了普通 Mega / X / Y / Z」，道具和形态都猜不到。
+     * suffix 为 null = 关闭；"" = 普通 Mega；"X"/"Y"/"Z" = 对应形态。
+     * 还没识别到对手时先存成「本局意向」，等计算伤害读到宝可梦后再匹配（见 startSnapshotSession）。
+     */
+    fun setOpponentMegaSuffix(suffix: String?) {
+        val directContext = loadDirectHudContext()
+        if (directContext == null) {
+            storePendingOpponentMegaSuffix(suffix)
+            if (suffix != null) publish("对方按 ${opponentChipLabel(suffix)} 记下，识别到宝可梦后再套用")
             return
         }
+        val session = directContext.session
+        val state = session.calculation
+        val base = opponentBaseSpecies(session, state)
+        val picked = base?.let { presetRepository.pickMegaFormForSuffix(it, suffix) }
+        // 匹配不到（这只没有这类 Mega）就静默按不 mega 算，不弹提示。
+        val effective = if (suffix == null) null else picked
+        storePendingOpponentMegaSuffix(null)
         val newState = state.copy(
-            opponentMega = picked != null,
-            opponentMegaFormId = picked?.showdownId,
-            opponentFormOverrides = if (picked == null) {
+            opponentMega = effective != null,
+            opponentMegaFormId = effective?.showdownId,
+            opponentMegaSuffix = if (effective == null) null else suffix,
+            opponentFormOverrides = if (effective == null) {
                 state.opponentFormOverrides - state.opponentSlot
             } else {
-                state.opponentFormOverrides + (state.opponentSlot to picked)
+                state.opponentFormOverrides + (state.opponentSlot to effective)
             },
         )
-        applyMegaChange(directContext, newState, if (picked == null) "对方超级进化已关闭" else "对方按 ${picked.displayName} 计算")
+        applyMegaChange(
+            directContext,
+            newState,
+            if (effective == null) "" else "对方按 ${effective.displayName} 计算",
+        )
     }
 
     private fun applyMegaChange(directContext: BattleContext, newState: BattleCalculationState, message: String) {
@@ -858,8 +876,19 @@ internal class BattleOverlayController(
                 ?.pokemon?.firstOrNull { pokemon -> sameSpecies(pokemon.species, localizedOwn) }?.item
             presetRepository.pickMegaFormForOwn(localizedOwn, recordedItem)?.let(presetRepository::localizeSpecies)
         }
-        val opponentMegaForm = previous?.takeIf { it.opponentMega }
-            ?.let { presetRepository.pickMegaForm(localizedOpponent, it.opponentMegaFormId)?.let(presetRepository::localizeSpecies) }
+        // 玩家可能先点了「对方MEGA」再点计算：这时只知道类别（普通/X/Y/Z），用后缀去识别到的家族里匹配；
+        // 匹配不到（这只没有这类形态）就静默按不 mega 算。
+        val pendingSuffix = pendingOpponentMegaSuffix()
+        val opponentSuffix = pendingSuffix
+            ?: previous?.takeIf { it.opponentMega }?.opponentMegaSuffix
+            ?: previous?.takeIf { it.opponentMega }?.opponentMegaFormId?.let(presetRepository::megaFormSuffix)
+        val opponentMegaForm = if (opponentSuffix != null) {
+            presetRepository.pickMegaFormForSuffix(localizedOpponent, opponentSuffix)
+                ?.let(presetRepository::localizeSpecies)
+        } else {
+            null
+        }
+        if (pendingSuffix != null) storePendingOpponentMegaSuffix(null)
         val ownMegaOn = ownMegaForm != null
         val opponentMegaOn = opponentMegaForm != null
         val containingMoves = moves.take(4).ifEmpty {
@@ -906,7 +935,8 @@ internal class BattleOverlayController(
                 ownMega = ownMegaOn,
                 opponentMega = opponentMegaOn,
                 ownMegaFormId = ownMegaForm?.showdownId ?: previous?.ownMegaFormId,
-                opponentMegaFormId = opponentMegaForm?.showdownId ?: previous?.opponentMegaFormId,
+                opponentMegaFormId = opponentMegaForm?.showdownId,
+                opponentMegaSuffix = if (opponentMegaForm != null) opponentSuffix else null,
                 ownFormOverrides = ownMegaForm?.let { mapOf(slot to it) }.orEmpty(),
                 opponentFormOverrides = opponentMegaForm?.let { mapOf(0 to it) }.orEmpty(),
                 // 快照流程就是「按当前画面算伤害」，必须一进来就是计算模式，
@@ -3868,7 +3898,10 @@ internal class BattleOverlayController(
     }
 
     companion object {
+        private const val PREFS = "battle-overlay-prefs"
+        private const val KEY_OPPONENT_MEGA_SUFFIX = "opponent-mega-suffix"
         private val BACKGROUND = Color.rgb(14, 20, 32)
+
         private val SURFACE = Color.rgb(24, 33, 49)
         private val SURFACE_ALT = Color.rgb(42, 54, 76)
         private val SURFACE_BORDER = Color.rgb(65, 80, 105)

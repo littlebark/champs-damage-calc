@@ -817,13 +817,10 @@ class OverlayCaptureService : Service() {
     }
 
     /**
-     * 对手无法推断（不知道道具，X/Y 都可能），所以点一下弹一个小列表直接选：
-     * 「关闭」+ 这只宝可梦的全部 Mega 形态。列表也允许在没有 Mega 时提示换人后重新识别。
+     * 对手无法推断（不知道道具、也可能 X 也可能 Y），所以只让玩家选「哪一类」：
+     * 关闭 / 普通 Mega / X / Y / Z。还没识别到对手时也能点，先记着，计算伤害时按识别到的家族匹配。
      */
     private fun onOpponentMegaChip() {
-        val (_, forms) = battleOverlayController.opponentMegaOptions()
-        // 对手当前这只没有 Mega：不提示，点了就当没点，按不 mega 计算。
-        if (forms.isEmpty()) return
         val anchor = opponentMegaChip ?: bubble ?: return
         val density = overlayWindowContext.resources.displayMetrics.density
         fun px(value: Int) = (value * density).toInt()
@@ -857,23 +854,21 @@ class OverlayCaptureService : Service() {
             popup?.dismiss()
             popup = null
         }
-        panel.addView(
-            optionRow("关闭超级进化") {
-                battleOverlayController.setOpponentMega(null)
-                dismiss()
-                refreshMegaChips()
-            },
-            LinearLayout.LayoutParams(px(140), LinearLayout.LayoutParams.WRAP_CONTENT).apply {
-                bottomMargin = px(4)
-            },
-        )
-        forms.forEach { form ->
+        fun choose(suffix: String?) {
+            battleOverlayController.setOpponentMegaSuffix(suffix)
+            dismiss()
+            refreshMegaChips()
+        }
+
+        listOf(
+            "关闭超级进化" to null,
+            "普通Mega" to "",
+            "Mega X" to "X",
+            "Mega Y" to "Y",
+            "Mega Z" to "Z",
+        ).forEach { (label, suffix) ->
             panel.addView(
-                optionRow(form.displayName) {
-                    battleOverlayController.setOpponentMega(form.showdownId)
-                    dismiss()
-                    refreshMegaChips()
-                },
+                optionRow(label) { choose(suffix) },
                 LinearLayout.LayoutParams(px(140), LinearLayout.LayoutParams.WRAP_CONTENT).apply {
                     bottomMargin = px(4)
                 },

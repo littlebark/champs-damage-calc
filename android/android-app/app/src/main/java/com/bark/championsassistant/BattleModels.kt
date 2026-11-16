@@ -255,6 +255,11 @@ data class BattleCalculationState(
     /** 多形态家族（喷火龙 X/Y 等）上次选的形态，用来在下次勾选时沿用。 */
     val ownMegaFormId: String? = null,
     val opponentMegaFormId: String? = null,
+    /**
+     * 对手这一局用的是哪一类超级进化（"" 普通 / "X" / "Y" / "Z"）。
+     * 对手是谁、什么道具都不知道，只让玩家先选类别；等画面识别出宝可梦后再按这类别去家族里匹配。
+     */
+    val opponentMegaSuffix: String? = null,
 ) {
     fun ownCondition(slot: Int = ownSlot): BattlePokemonCondition = ownConditions[slot] ?: BattlePokemonCondition()
 
@@ -336,6 +341,7 @@ data class BattleCalculationState(
         if (opponentMega) put("opponentMega", true)
         ownMegaFormId?.let { put("ownMegaFormId", it) }
         opponentMegaFormId?.let { put("opponentMegaFormId", it) }
+        opponentMegaSuffix?.let { put("opponentMegaSuffix", it) }
     }
 
     companion object {
@@ -393,6 +399,7 @@ data class BattleCalculationState(
             opponentMega = json.optBoolean("opponentMega"),
             ownMegaFormId = json.optString("ownMegaFormId").takeIf(String::isNotBlank),
             opponentMegaFormId = json.optString("opponentMegaFormId").takeIf(String::isNotBlank),
+            opponentMegaSuffix = json.optString("opponentMegaSuffix").takeIf(String::isNotEmpty),
         )
         }
     }
@@ -830,6 +837,26 @@ class OpponentPresetRepository(private val context: Context) {
             options.firstOrNull { megaStoneIdFor(it)?.equals(itemId, ignoreCase = true) == true }?.let { return it }
         }
         return pickMegaForm(species, null)
+    }
+
+    /**
+     * 对手：只知道「用了普通 Mega / X / Y / Z」这一类别，用后缀去家族里找对应形态。
+     * null 代表不 mega；找不到就按不 mega 算（静默）。
+     */
+    fun pickMegaFormForSuffix(species: EntityValue, suffix: String?): EntityValue? {
+        if (suffix == null) return null
+        val options = megaFormsFor(species)
+        if (options.isEmpty()) return null
+        val wanted = suffix.uppercase()
+        return options.firstOrNull { megaFormSuffix(it.showdownId) == wanted }
+    }
+
+    /** "Charizard-Mega-X" → "X"，"Garchomp-Mega-Z" → "Z"，普通 Mega → ""。 */
+    fun megaFormSuffix(showdownId: String): String = when {
+        showdownId.endsWith("-Mega-X", ignoreCase = true) -> "X"
+        showdownId.endsWith("-Mega-Y", ignoreCase = true) -> "Y"
+        showdownId.endsWith("-Mega-Z", ignoreCase = true) -> "Z"
+        else -> ""
     }
 
     fun typeMatchupsFor(species: EntityValue): Map<String, List<String>> =
