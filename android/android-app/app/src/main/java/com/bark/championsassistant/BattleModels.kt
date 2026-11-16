@@ -797,6 +797,41 @@ class OpponentPresetRepository(private val context: Context) {
             ?: options.first()
     }
 
+    /**
+     * 这个 Mega 形态需要哪块进化石（道具表里的 showdownId）。
+     * 数据里没有 direct 字段，只能按名字推：Charizard-Mega-X → Charizardite X、Absol-Mega-Z → Absolite Z、
+     * Abomasnow-Mega → Abomasite（缩写）；对不上就返回 null。
+     */
+    fun megaStoneIdFor(mega: EntityValue): String? {
+        val id = mega.showdownId
+        val base = id.substringBefore("-Mega", id).ifBlank { id }
+        val suffix = when {
+            id.endsWith("-Mega-X", ignoreCase = true) -> "X"
+            id.endsWith("-Mega-Y", ignoreCase = true) -> "Y"
+            id.endsWith("-Mega-Z", ignoreCase = true) -> "Z"
+            else -> ""
+        }
+        val itemSuffix = suffix.lowercase()
+        val baseNorm = normalizeShowdownId(base)
+        return itemCatalog.firstOrNull { item ->
+            val norm = normalizeShowdownId(item.showdownId)
+            if (!norm.endsWith("ite$itemSuffix")) return@firstOrNull false
+            val stem = norm.removeSuffix(itemSuffix).removeSuffix("ite")
+            stem.length >= 5 && (baseNorm.startsWith(stem) || stem.startsWith(baseNorm))
+        }?.showdownId
+    }
+
+    /** 我方：按持有的进化石决定 Mega 形态（喷火龙 X/Y 靠道具区分），没道具/对不上就取第一个。 */
+    fun pickMegaFormForOwn(species: EntityValue, item: EntityValue?): EntityValue? {
+        val options = megaFormsFor(species)
+        if (options.isEmpty()) return null
+        val itemId = item?.showdownId
+        if (itemId != null) {
+            options.firstOrNull { megaStoneIdFor(it)?.equals(itemId, ignoreCase = true) == true }?.let { return it }
+        }
+        return pickMegaForm(species, null)
+    }
+
     fun typeMatchupsFor(species: EntityValue): Map<String, List<String>> =
         formBySpecies[normalizeShowdownId(species.showdownId)]?.typeMatchups.orEmpty()
 

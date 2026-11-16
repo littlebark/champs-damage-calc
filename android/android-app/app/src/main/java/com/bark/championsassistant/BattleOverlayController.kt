@@ -657,15 +657,45 @@ internal class BattleOverlayController(
         val ownBase = ownBaseSpecies(directContext, state)
         val opponentBase = opponentBaseSpecies(directContext.session, state)
         val ownOptions = ownBase?.let(presetRepository::megaFormsFor).orEmpty()
-        val opponentOptions = opponentBase?.let(presetRepository::megaFormsFor).orEmpty()
         return MegaChipState(
-            ownLabel = chipLabel("我方", state.ownMega, ownBase, state.ownMegaFormId),
+            ownLabel = ownChipLabel(ownBase, state),
             ownOn = state.ownMega,
             ownAvailable = ownBase == null || ownOptions.isNotEmpty(),
-            opponentLabel = chipLabel("对方", state.opponentMega, opponentBase, state.opponentMegaFormId),
+            // 对手永远可点：可能已经换人、也可能我们看错了，不能因为当前这只没有 Mega 就锁死。
+            opponentLabel = if (state.opponentMega) {
+                "对方M${megaSuffix(state.opponentFormOverrides[state.opponentSlot])}"
+            } else {
+                "对方MEGA"
+            },
             opponentOn = state.opponentMega,
-            opponentAvailable = opponentBase == null || opponentOptions.isNotEmpty(),
+            opponentAvailable = true,
         )
+    }
+
+    /** 「识别到的对手能超级进化成哪些形态」——给对手选择列表用。 */
+    fun opponentMegaOptions(): Pair<EntityValue?, List<EntityValue>> {
+        val directContext = battleContextCache ?: runCatching { sessionRepository.loadSession() }.getOrNull()
+            ?.let { session ->
+                val teams = runCatching { TeamRepository.load(context) }.getOrDefault(emptyList())
+                val team = teams.firstOrNull { it.id == session.selectedOwnTeamId }
+                if (team == null) null else BattleContext(session, teams, team)
+            } ?: return null to emptyList()
+        val state = directContext.session.calculation
+        val base = opponentBaseSpecies(directContext.session, state)
+        return base to base?.let(presetRepository::megaFormsFor).orEmpty()
+    }
+
+    private fun ownChipLabel(base: EntityValue?, state: BattleCalculationState): String {
+        if (!state.ownMega || base == null) return "我方MEGA"
+        val item = ownPokemonItem(state)
+        val picked = presetRepository.pickMegaFormForOwn(base, item)
+        return "我方M${megaSuffix(picked)}"
+    }
+
+    /** 我方这只当前记录的持有物，用来判断该变 X 还是 Y。 */
+    private fun ownPokemonItem(state: BattleCalculationState): EntityValue? {
+        val directContext = battleContextCache ?: return null
+        return directContext.ownTeam.pokemon.getOrNull(state.ownSlot)?.item
     }
 
     private fun chipLabel(prefix: String, on: Boolean, species: EntityValue?, formId: String?): String {
@@ -716,55 +746,70 @@ internal class BattleOverlayController(
     }
 
     /**
-     * 点 Mega chip：关→开（用上次选的形态，没有就取第一个）；多形态时再点切下一个；只有 1 个形态时再点关闭。
-     * 只改形态覆盖，不动物种记录，改完立刻用已有识别结果重算一次（不重新截屏）。
+     * 我方 Mega 只有一个开关：开的时候按持有物自动选形态（喷火龙 X/Y 靠进化石区分），关掉就回到基础形态。
+     * 只改形态覆盖，不动物种记录；改完直接用已有识别结果重算一次（不重新截屏）。
      */
-    fun toggleMegaSide(ownSide: Boolean) {
+    fun toggleOwnMega() {
         val directContext = loadDirectHudContext() ?: return
         val session = directContext.session
         val state = session.calculation
-        val base = if (ownSide) ownBaseSpecies(directContext, state) else opponentBaseSpecies(session, state)
-        val options = base?.let(presetRepository::megaFormsFor).orEmpty()
-        if (base == null || options.isEmpty()) {
+        val base = ownBaseSpecies(directContext, state) ?: return
+        val options = presetRepository.megaFormsFor(base)
+        if (options.isEmpty()) {
             publish("这只宝可梦没有超级进化形态")
             return
         }
-        val currentOn = if (ownSide) state.ownMega else state.opponentMega
-        val currentFormId = if (ownSide) state.ownMegaFormId else state.opponentMegaFormId
-        val picked: EntityValue?
-        if (!currentOn) {
-            picked = presetRepository.pickMegaForm(base, currentFormId) ?: options.first()
+        val picked = if (state.ownMega) {
+            null
         } else {
-            val index = options.indexOfFirst { it.showdownId == currentFormId }.let { if (it < 0) 0 else it }
-            picked = options.getOrNull(index + 1)
-        }
-        val overrides = if (ownSide) {
-            if (picked == null) state.ownFormOverrides - state.ownSlot
-            else state.ownFormOverrides + (state.ownSlot to picked)
-        } else {
-            if (picked == null) state.opponentFormOverrides - state.opponentSlot
-            else state.opponentFormOverrides + (state.opponentSlot to picked)
+            presetRepository.pickMegaFormForOwn(base, ownPokemonItem(state))
         }
         val newState = state.copy(
-            ownMega = if (ownSide) picked != null else state.ownMega,
-            opponentMega = if (ownSide) state.opponentMega else picked != null,
-            ownMegaFormId = if (ownSide) picked?.showdownId else state.ownMegaFormId,
-            opponentMegaFormId = if (ownSide) state.opponentMegaFormId else picked?.showdownId,
-            ownFormOverrides = if (ownSide) overrides else state.ownFormOverrides,
-            opponentFormOverrides = if (ownSide) state.opponentFormOverrides else overrides,
-        )
-        val changed = session.copy(calculation = newState)
-        saveSession(changed)
-        battleContextCache = directContext.copy(session = changed)
-        directDamageCache.clear()
-        directCalculationGeneration++
-        publish(
-            when {
-                picked == null -> if (ownSide) "我方超级进化已关闭" else "对方超级进化已关闭"
-                else -> "按 ${picked.displayName} 计算"
+            ownMega = picked != null,
+            ownMegaFormId = picked?.showdownId,
+            ownFormOverrides = if (picked == null) {
+                state.ownFormOverrides - state.ownSlot
+            } else {
+                state.ownFormOverrides + (state.ownSlot to picked)
             },
         )
-        if (directOverlay.isVisible) showDirectHud(battleContextCache ?: directContext.copy(session = changed))
+        applyMegaChange(directContext, newState, if (picked == null) "我方超级进化已关闭" else "我方按 ${picked.displayName} 计算")
+    }
+
+    /** 对手：不知道道具，可能 X 也可能 Y，所以由玩家从列表里直接选（也可以关闭）。 */
+    fun setOpponentMega(formId: String?) {
+        val directContext = loadDirectHudContext() ?: return
+        val session = directContext.session
+        val state = session.calculation
+        val base = opponentBaseSpecies(session, state) ?: return
+        val picked = formId?.let { id ->
+            presetRepository.megaFormsFor(base).firstOrNull { it.showdownId == id }
+        }
+        if (formId != null && picked == null) {
+            publish("这只宝可梦没有这个超级进化形态")
+            return
+        }
+        val newState = state.copy(
+            opponentMega = picked != null,
+            opponentMegaFormId = picked?.showdownId,
+            opponentFormOverrides = if (picked == null) {
+                state.opponentFormOverrides - state.opponentSlot
+            } else {
+                state.opponentFormOverrides + (state.opponentSlot to picked)
+            },
+        )
+        applyMegaChange(directContext, newState, if (picked == null) "对方超级进化已关闭" else "对方按 ${picked.displayName} 计算")
+    }
+
+    private fun applyMegaChange(directContext: BattleContext, newState: BattleCalculationState, message: String) {
+        val changed = directContext.session.copy(calculation = newState)
+        saveSession(changed)
+        val updated = directContext.copy(session = changed)
+        battleContextCache = updated
+        directDamageCache.clear()
+        directCalculationGeneration++
+        publish(message)
+        if (directOverlay.isVisible) showDirectHud(updated)
     }
 
     fun revealDirectHud() {
@@ -795,8 +840,12 @@ internal class BattleOverlayController(
         val localizedOpponent = presetRepository.localizeSpecies(opponent)
         // chip 勾选状态跨回合保留；Mega 形态按这次识别到的物种重新解析（换了一只就按新的物种找）。
         val previous = runCatching { sessionRepository.loadSession() }.getOrNull()?.calculation
-        val ownMegaForm = previous?.takeIf { it.ownMega }
-            ?.let { presetRepository.pickMegaForm(localizedOwn, it.ownMegaFormId)?.let(presetRepository::localizeSpecies) }
+        val ownMegaForm = previous?.takeIf { it.ownMega }?.let {
+            // 我方形态按记忆里的持有物决定（喷火龙吃「喷火龙进化石X」就是 X），没道具才取第一个。
+            val recordedItem = runCatching { TeamRepository.loadMyPokemon(context) }.getOrNull()
+                ?.pokemon?.firstOrNull { pokemon -> sameSpecies(pokemon.species, localizedOwn) }?.item
+            presetRepository.pickMegaFormForOwn(localizedOwn, recordedItem)?.let(presetRepository::localizeSpecies)
+        }
         val opponentMegaForm = previous?.takeIf { it.opponentMega }
             ?.let { presetRepository.pickMegaForm(localizedOpponent, it.opponentMegaFormId)?.let(presetRepository::localizeSpecies) }
         val ownMegaOn = ownMegaForm != null

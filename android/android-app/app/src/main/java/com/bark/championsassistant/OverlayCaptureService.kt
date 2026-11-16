@@ -44,6 +44,7 @@ import android.widget.ListPopupWindow
 import android.widget.ArrayAdapter
 import android.widget.FrameLayout
 import android.widget.PopupMenu
+import android.widget.PopupWindow
 import android.widget.TextView
 import android.widget.Toast
 import androidx.compose.runtime.mutableStateOf
@@ -681,8 +682,8 @@ class OverlayCaptureService : Service() {
             includeFontPadding = false
             setOnClickListener { onClick() }
         }
-        val ownChip = megaChip { toggleMegaChip(ownSide = true) }
-        val opponentChip = megaChip { toggleMegaChip(ownSide = false) }
+        val ownChip = megaChip { onOwnMegaChip() }
+        val opponentChip = megaChip { onOpponentMegaChip() }
         ownMegaChip = ownChip
         opponentMegaChip = opponentChip
         container.addView(
@@ -809,9 +810,86 @@ class OverlayCaptureService : Service() {
         opponentMegaChip = null
     }
 
-    private fun toggleMegaChip(ownSide: Boolean) {
-        battleOverlayController.toggleMegaSide(ownSide)
+    /** 我方只开/关：形态由持有物决定，不用每次点都选。 */
+    private fun onOwnMegaChip() {
+        battleOverlayController.toggleOwnMega()
         refreshMegaChips()
+    }
+
+    /**
+     * 对手无法推断（不知道道具，X/Y 都可能），所以点一下弹一个小列表直接选：
+     * 「关闭」+ 这只宝可梦的全部 Mega 形态。列表也允许在没有 Mega 时提示换人后重新识别。
+     */
+    private fun onOpponentMegaChip() {
+        val (base, forms) = battleOverlayController.opponentMegaOptions()
+        if (base != null && forms.isEmpty()) {
+            showStatusChip("当前识别到的对手没有超级进化形态；若已换人，请重新识别")
+            return
+        }
+        if (forms.isEmpty()) {
+            showStatusChip("先按一次「计算伤害」，知道对手是谁才能选超级进化")
+            return
+        }
+        val anchor = opponentMegaChip ?: bubble ?: return
+        val density = overlayWindowContext.resources.displayMetrics.density
+        fun px(value: Int) = (value * density).toInt()
+
+        val panel = LinearLayout(overlayWindowContext).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(px(6), px(6), px(6), px(6))
+            background = GradientDrawable().apply {
+                cornerRadius = px(12).toFloat()
+                setColor(Color.argb(238, 24, 42, 36))
+                setStroke(px(1), Color.argb(150, 176, 214, 198))
+            }
+        }
+        fun optionRow(label: String, onClick: () -> Unit): TextView = TextView(overlayWindowContext).apply {
+            text = label
+            textSize = 13f
+            gravity = Gravity.CENTER
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            includeFontPadding = false
+            setTextColor(Color.WHITE)
+            background = GradientDrawable().apply {
+                cornerRadius = px(9).toFloat()
+                setColor(Color.argb(210, 40, 66, 56))
+            }
+            setPadding(px(8), px(9), px(8), px(9))
+            setOnClickListener { onClick() }
+        }
+
+        var popup: PopupWindow? = null
+        fun dismiss() {
+            popup?.dismiss()
+            popup = null
+        }
+        panel.addView(
+            optionRow("关闭超级进化") {
+                battleOverlayController.setOpponentMega(null)
+                dismiss()
+                refreshMegaChips()
+            },
+            LinearLayout.LayoutParams(px(140), LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+                bottomMargin = px(4)
+            },
+        )
+        forms.forEach { form ->
+            panel.addView(
+                optionRow(form.displayName) {
+                    battleOverlayController.setOpponentMega(form.showdownId)
+                    dismiss()
+                    refreshMegaChips()
+                },
+                LinearLayout.LayoutParams(px(140), LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+                    bottomMargin = px(4)
+                },
+            )
+        }
+        popup = PopupWindow(panel, px(152), LinearLayout.LayoutParams.WRAP_CONTENT, true).apply {
+            isOutsideTouchable = true
+            elevation = 8f
+            showAsDropDown(anchor, 0, px(4))
+        }
     }
 
     /** 把 chip 的文案/底色刷成当前会话的 Mega 状态；没会话时是「默认关」的灰样子。 */
