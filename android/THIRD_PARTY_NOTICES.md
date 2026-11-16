@@ -6,9 +6,14 @@ When an Android APK is built, the project copies these notices and license texts
 
 ## Project license scope
 
-Original code authored for this project is released under the MIT License in the repository-root `LICENSE` file, with copyright held by `crazylei12`.
+The Android application code in this repository was originally forked from
+<https://github.com/crazylei12/Pokemon-Champions-dmg_cal> (MIT), whose original copyright notice is retained.
+Subsequent application-layer work (UI, overlay, OCR business flow, recognition and correction logic, storage)
+is authored for this project.
 
-The project MIT License applies only to material the project copyright holder has the right to license. It does not relicense third-party software, data, names, trademarks, images or other assets; those remain subject to their own licenses and rights.
+This license scope applies only to material the project authors have the right to license. It does not relicense
+third-party software, data, names, trademarks, images or other assets; those remain subject to their own
+licenses and rights.
 
 ## Smogon damage-calc
 
