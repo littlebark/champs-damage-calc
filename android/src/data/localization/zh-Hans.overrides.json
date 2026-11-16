@@ -132,6 +132,146 @@
       "zhHans": ["猾大狐"],
       "aliases": ["狐大盗", "狐大盜"],
       "note": "PokeAPI zh-hans official name; the old Showdown/Taiwan name stays an alias so OCR still matches what the game prints"
+    },
+    {
+      "entityType": "move",
+      "showdownId": "Air Slash",
+      "zhHans": ["空气斩"],
+      "aliases": ["空气之刃", "空氣斬"],
+      "note": "PokeAPI zh-hans official name; old name kept as alias"
+    },
+    {
+      "entityType": "move",
+      "showdownId": "Curse",
+      "zhHans": ["诅咒"],
+      "aliases": ["咒术", "詛咒"],
+      "note": "PokeAPI zh-hans official name; old name kept as alias"
+    },
+    {
+      "entityType": "move",
+      "showdownId": "Forest's Curse",
+      "zhHans": ["森林诅咒"],
+      "aliases": ["森林咒术", "森林詛咒"],
+      "note": "PokeAPI zh-hans official name; old name kept as alias"
+    },
+    {
+      "entityType": "move",
+      "showdownId": "Foul Play",
+      "zhHans": ["欺诈"],
+      "aliases": ["移花接木", "欺詐"],
+      "note": "PokeAPI zh-hans official name; old name kept as alias"
+    },
+    {
+      "entityType": "move",
+      "showdownId": "Guillotine",
+      "zhHans": ["断头钳"],
+      "aliases": ["极落钳", "斷頭鉗"],
+      "note": "PokeAPI zh-hans official name; old name kept as alias"
+    },
+    {
+      "entityType": "move",
+      "showdownId": "Inferno",
+      "zhHans": ["炼狱"],
+      "aliases": ["烈火深渊", "煉獄"],
+      "note": "PokeAPI zh-hans official name; old name kept as alias"
+    },
+    {
+      "entityType": "move",
+      "showdownId": "Infestation",
+      "zhHans": ["死缠烂打"],
+      "aliases": ["纠缠不休", "死纏爛打"],
+      "note": "PokeAPI zh-hans official name; old name kept as alias"
+    },
+    {
+      "entityType": "move",
+      "showdownId": "Leech Life",
+      "zhHans": ["吸血"],
+      "aliases": ["汲取", "吸血"],
+      "note": "PokeAPI zh-hans official name; old name kept as alias"
+    },
+    {
+      "entityType": "move",
+      "showdownId": "Perish Song",
+      "zhHans": ["灭亡之歌"],
+      "aliases": ["终焉之歌", "滅亡之歌"],
+      "note": "PokeAPI zh-hans official name; old name kept as alias"
+    },
+    {
+      "entityType": "move",
+      "showdownId": "Reversal",
+      "zhHans": ["起死回生"],
+      "aliases": ["绝处逢生", "起死回生"],
+      "note": "PokeAPI zh-hans official name; old name kept as alias"
+    },
+    {
+      "entityType": "move",
+      "showdownId": "Sand Tomb",
+      "zhHans": ["流沙地狱"],
+      "aliases": ["流沙深渊", "流沙地獄"],
+      "note": "PokeAPI zh-hans official name; old name kept as alias"
+    },
+    {
+      "entityType": "move",
+      "showdownId": "Scary Face",
+      "zhHans": ["鬼面"],
+      "aliases": ["可怕面孔", "鬼面"],
+      "note": "PokeAPI zh-hans official name; old name kept as alias"
+    },
+    {
+      "entityType": "move",
+      "showdownId": "Self-Destruct",
+      "zhHans": ["自爆"],
+      "aliases": ["玉石俱碎", "自爆"],
+      "note": "PokeAPI zh-hans official name; old name kept as alias"
+    },
+    {
+      "entityType": "move",
+      "showdownId": "Throat Chop",
+      "zhHans": ["地狱突刺"],
+      "aliases": ["深渊突刺", "地獄突刺"],
+      "note": "PokeAPI zh-hans official name; old name kept as alias"
+    },
+    {
+      "entityType": "move",
+      "showdownId": "Will-O-Wisp",
+      "zhHans": ["鬼火"],
+      "aliases": ["磷火", "鬼火"],
+      "note": "PokeAPI zh-hans official name; old name kept as alias"
+    },
+    {
+      "entityType": "item",
+      "showdownId": "Absolite Z",
+      "zhHans": ["阿勃梭鲁进化石Z"],
+      "aliases": ["阿勃梭鲁进化石Ｚ", "阿勃梭魯進化石Z"],
+      "note": "PokeAPI zh-hans official name; old name kept as alias"
+    },
+    {
+      "entityType": "item",
+      "showdownId": "Garchompite Z",
+      "zhHans": ["烈咬陆鲨进化石Z"],
+      "aliases": ["烈咬陆鲨进化石Ｚ", "烈咬陸鯊進化石Z"],
+      "note": "PokeAPI zh-hans official name; old name kept as alias"
+    },
+    {
+      "entityType": "item",
+      "showdownId": "Lucarionite Z",
+      "zhHans": ["路卡利欧进化石Z"],
+      "aliases": ["路卡利欧进化石Ｚ", "路卡利歐進化石Z"],
+      "note": "PokeAPI zh-hans official name; old name kept as alias"
+    },
+    {
+      "entityType": "item",
+      "showdownId": "Raichunite X",
+      "zhHans": ["雷丘进化石X"],
+      "aliases": ["雷丘进化石Ｘ", "雷丘進化石Ｘ"],
+      "note": "PokeAPI zh-hans official name; old name kept as alias"
+    },
+    {
+      "entityType": "item",
+      "showdownId": "Raichunite Y",
+      "zhHans": ["雷丘进化石Y"],
+      "aliases": ["雷丘进化石Ｙ", "雷丘進化石Ｙ"],
+      "note": "PokeAPI zh-hans official name; old name kept as alias"
     }
   ]
 }

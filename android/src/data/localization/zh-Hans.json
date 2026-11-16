@@ -6315,14 +6315,16 @@
     "englishName": "Air Slash",
     "localizedNames": {
       "zh-Hans": [
-        "空气之刃"
+        "空气斩"
       ],
       "en": [
         "Air Slash"
       ]
     },
     "aliases": [
-      "Air Slash"
+      "Air Slash",
+      "空气之刃",
+      "空氣斬"
     ]
   },
   {
@@ -7777,14 +7779,16 @@
     "englishName": "Curse",
     "localizedNames": {
       "zh-Hans": [
-        "咒术"
+        "诅咒"
       ],
       "en": [
         "Curse"
       ]
     },
     "aliases": [
-      "Curse"
+      "Curse",
+      "咒术",
+      "詛咒"
     ]
   },
   {
@@ -9222,14 +9226,16 @@
     "englishName": "Forest's Curse",
     "localizedNames": {
       "zh-Hans": [
-        "森林咒术"
+        "森林诅咒"
       ],
       "en": [
         "Forest's Curse"
       ]
     },
     "aliases": [
-      "Forest's Curse"
+      "Forest's Curse",
+      "森林咒术",
+      "森林詛咒"
     ]
   },
   {
@@ -9239,14 +9245,16 @@
     "englishName": "Foul Play",
     "localizedNames": {
       "zh-Hans": [
-        "移花接木"
+        "欺诈"
       ],
       "en": [
         "Foul Play"
       ]
     },
     "aliases": [
-      "Foul Play"
+      "Foul Play",
+      "移花接木",
+      "欺詐"
     ]
   },
   {
@@ -9579,14 +9587,16 @@
     "englishName": "Guillotine",
     "localizedNames": {
       "zh-Hans": [
-        "极落钳"
+        "断头钳"
       ],
       "en": [
         "Guillotine"
       ]
     },
     "aliases": [
-      "Guillotine"
+      "Guillotine",
+      "极落钳",
+      "斷頭鉗"
     ]
   },
   {
@@ -10242,14 +10252,16 @@
     "englishName": "Inferno",
     "localizedNames": {
       "zh-Hans": [
-        "烈火深渊"
+        "炼狱"
       ],
       "en": [
         "Inferno"
       ]
     },
     "aliases": [
-      "Inferno"
+      "Inferno",
+      "烈火深渊",
+      "煉獄"
     ]
   },
   {
@@ -10259,14 +10271,16 @@
     "englishName": "Infestation",
     "localizedNames": {
       "zh-Hans": [
-        "纠缠不休"
+        "死缠烂打"
       ],
       "en": [
         "Infestation"
       ]
     },
     "aliases": [
-      "Infestation"
+      "Infestation",
+      "纠缠不休",
+      "死纏爛打"
     ]
   },
   {
@@ -10548,14 +10562,15 @@
     "englishName": "Leech Life",
     "localizedNames": {
       "zh-Hans": [
-        "汲取"
+        "吸血"
       ],
       "en": [
         "Leech Life"
       ]
     },
     "aliases": [
-      "Leech Life"
+      "Leech Life",
+      "汲取"
     ]
   },
   {
@@ -11517,14 +11532,16 @@
     "englishName": "Perish Song",
     "localizedNames": {
       "zh-Hans": [
-        "终焉之歌"
+        "灭亡之歌"
       ],
       "en": [
         "Perish Song"
       ]
     },
     "aliases": [
-      "Perish Song"
+      "Perish Song",
+      "终焉之歌",
+      "滅亡之歌"
     ]
   },
   {
@@ -12350,14 +12367,15 @@
     "englishName": "Reversal",
     "localizedNames": {
       "zh-Hans": [
-        "绝处逢生"
+        "起死回生"
       ],
       "en": [
         "Reversal"
       ]
     },
     "aliases": [
-      "Reversal"
+      "Reversal",
+      "绝处逢生"
     ]
   },
   {
@@ -12605,14 +12623,16 @@
     "englishName": "Sand Tomb",
     "localizedNames": {
       "zh-Hans": [
-        "流沙深渊"
+        "流沙地狱"
       ],
       "en": [
         "Sand Tomb"
       ]
     },
     "aliases": [
-      "Sand Tomb"
+      "Sand Tomb",
+      "流沙深渊",
+      "流沙地獄"
     ]
   },
   {
@@ -12673,14 +12693,15 @@
     "englishName": "Scary Face",
     "localizedNames": {
       "zh-Hans": [
-        "可怕面孔"
+        "鬼面"
       ],
       "en": [
         "Scary Face"
       ]
     },
     "aliases": [
-      "Scary Face"
+      "Scary Face",
+      "可怕面孔"
     ]
   },
   {
@@ -12758,14 +12779,15 @@
     "englishName": "Self-Destruct",
     "localizedNames": {
       "zh-Hans": [
-        "玉石俱碎"
+        "自爆"
       ],
       "en": [
         "Self-Destruct"
       ]
     },
     "aliases": [
-      "Self-Destruct"
+      "Self-Destruct",
+      "玉石俱碎"
     ]
   },
   {
@@ -14203,14 +14225,16 @@
     "englishName": "Throat Chop",
     "localizedNames": {
       "zh-Hans": [
-        "深渊突刺"
+        "地狱突刺"
       ],
       "en": [
         "Throat Chop"
       ]
     },
     "aliases": [
-      "Throat Chop"
+      "Throat Chop",
+      "深渊突刺",
+      "地獄突刺"
     ]
   },
   {
@@ -14917,14 +14941,15 @@
     "englishName": "Will-O-Wisp",
     "localizedNames": {
       "zh-Hans": [
-        "磷火"
+        "鬼火"
       ],
       "en": [
         "Will-O-Wisp"
       ]
     },
     "aliases": [
-      "Will-O-Wisp"
+      "Will-O-Wisp",
+      "磷火"
     ]
   },
   {
@@ -18811,7 +18836,6 @@
     "englishName": "Absolite Z",
     "localizedNames": {
       "zh-Hans": [
-        "阿勃梭鲁进化石Ｚ",
         "阿勃梭鲁进化石Z"
       ],
       "en": [
@@ -18819,7 +18843,9 @@
       ]
     },
     "aliases": [
-      "Absolite Z"
+      "Absolite Z",
+      "阿勃梭鲁进化石Ｚ",
+      "阿勃梭魯進化石Z"
     ]
   },
   {
@@ -19816,7 +19842,6 @@
     "englishName": "Garchompite Z",
     "localizedNames": {
       "zh-Hans": [
-        "烈咬陆鲨进化石Ｚ",
         "烈咬陆鲨进化石Z"
       ],
       "en": [
@@ -19824,7 +19849,9 @@
       ]
     },
     "aliases": [
-      "Garchompite Z"
+      "Garchompite Z",
+      "烈咬陆鲨进化石Ｚ",
+      "烈咬陸鯊進化石Z"
     ]
   },
   {
@@ -20327,7 +20354,6 @@
     "englishName": "Lucarionite Z",
     "localizedNames": {
       "zh-Hans": [
-        "路卡利欧进化石Ｚ",
         "路卡利欧进化石Z"
       ],
       "en": [
@@ -20335,7 +20361,9 @@
       ]
     },
     "aliases": [
-      "Lucarionite Z"
+      "Lucarionite Z",
+      "路卡利欧进化石Ｚ",
+      "路卡利歐進化石Z"
     ]
   },
   {
@@ -20855,7 +20883,6 @@
     "englishName": "Raichunite X",
     "localizedNames": {
       "zh-Hans": [
-        "雷丘进化石Ｘ",
         "雷丘进化石X"
       ],
       "en": [
@@ -20863,7 +20890,9 @@
       ]
     },
     "aliases": [
-      "Raichunite X"
+      "Raichunite X",
+      "雷丘进化石Ｘ",
+      "雷丘進化石Ｘ"
     ]
   },
   {
@@ -20873,7 +20902,6 @@
     "englishName": "Raichunite Y",
     "localizedNames": {
       "zh-Hans": [
-        "雷丘进化石Ｙ",
         "雷丘进化石Y"
       ],
       "en": [
@@ -20881,7 +20909,9 @@
       ]
     },
     "aliases": [
-      "Raichunite Y"
+      "Raichunite Y",
+      "雷丘进化石Ｙ",
+      "雷丘進化石Ｙ"
     ]
   },
   {
