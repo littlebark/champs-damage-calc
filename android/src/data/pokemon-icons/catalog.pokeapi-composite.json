@@ -2791,7 +2791,7 @@
     {
       "canonicalId": "species.cofagrigus",
       "showdownId": "Cofagrigus",
-      "displayName": "死神棺",
+      "displayName": "迭失棺",
       "englishName": "Cofagrigus",
       "pokemonApi": {
         "pokemonId": "563",
@@ -6557,7 +6557,7 @@
     {
       "canonicalId": "species.kingambit",
       "showdownId": "Kingambit",
-      "displayName": "仆斩将军",
+      "displayName": "仆刀将军",
       "englishName": "Kingambit",
       "pokemonApi": {
         "pokemonId": "983",
@@ -8046,7 +8046,7 @@
     {
       "canonicalId": "species.mimikyu",
       "showdownId": "Mimikyu",
-      "displayName": "谜拟Ｑ",
+      "displayName": "谜拟丘",
       "englishName": "Mimikyu",
       "pokemonApi": {
         "pokemonId": "778",
@@ -8085,7 +8085,7 @@
     {
       "canonicalId": "species.mimikyubusted",
       "showdownId": "Mimikyu-Busted",
-      "displayName": "谜拟Ｑ-现形的样子",
+      "displayName": "谜拟丘-现形的样子",
       "englishName": "Mimikyu-Busted",
       "pokemonApi": {
         "pokemonId": "10143",
@@ -8657,7 +8657,7 @@
     {
       "canonicalId": "species.pangoro",
       "showdownId": "Pangoro",
-      "displayName": "流氓熊猫",
+      "displayName": "霸道熊猫",
       "englishName": "Pangoro",
       "pokemonApi": {
         "pokemonId": "675",
@@ -10027,7 +10027,7 @@
     {
       "canonicalId": "species.runerigus",
       "showdownId": "Runerigus",
-      "displayName": "死神板",
+      "displayName": "迭失板",
       "englishName": "Runerigus",
       "pokemonApi": {
         "pokemonId": "867",
@@ -12354,7 +12354,7 @@
     {
       "canonicalId": "species.thievul",
       "showdownId": "Thievul",
-      "displayName": "狐大盗",
+      "displayName": "猾大狐",
       "englishName": "Thievul",
       "pokemonApi": {
         "pokemonId": "828",

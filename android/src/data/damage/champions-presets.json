@@ -63645,7 +63645,7 @@
         "entityType": "species",
         "canonicalId": "species.cofagrigus",
         "showdownId": "Cofagrigus",
-        "displayName": "死神棺",
+        "displayName": "迭失棺",
         "source": "preset"
       },
       "types": [
@@ -144754,7 +144754,7 @@
         "entityType": "species",
         "canonicalId": "species.kingambit",
         "showdownId": "Kingambit",
-        "displayName": "仆斩将军",
+        "displayName": "仆刀将军",
         "source": "preset"
       },
       "types": [
@@ -177282,7 +177282,7 @@
         "entityType": "species",
         "canonicalId": "species.mimikyu",
         "showdownId": "Mimikyu",
-        "displayName": "谜拟Ｑ",
+        "displayName": "谜拟丘",
         "source": "preset"
       },
       "types": [
@@ -178072,7 +178072,7 @@
         "entityType": "species",
         "canonicalId": "species.mimikyubusted",
         "showdownId": "Mimikyu-Busted",
-        "displayName": "谜拟Ｑ-现形的样子",
+        "displayName": "谜拟丘-现形的样子",
         "source": "preset"
       },
       "types": [
@@ -190164,7 +190164,7 @@
         "entityType": "species",
         "canonicalId": "species.pangoro",
         "showdownId": "Pangoro",
-        "displayName": "流氓熊猫",
+        "displayName": "霸道熊猫",
         "source": "preset"
       },
       "types": [
@@ -217271,7 +217271,7 @@
         "entityType": "species",
         "canonicalId": "species.runerigus",
         "showdownId": "Runerigus",
-        "displayName": "死神板",
+        "displayName": "迭失板",
         "source": "preset"
       },
       "types": [
@@ -265624,7 +265624,7 @@
         "entityType": "species",
         "canonicalId": "species.thievul",
         "showdownId": "Thievul",
-        "displayName": "狐大盗",
+        "displayName": "猾大狐",
         "source": "preset"
       },
       "types": [
@@ -315679,7 +315679,7 @@
         "entityType": "species",
         "canonicalId": "species.kingambit",
         "showdownId": "Kingambit",
-        "displayName": "仆斩将军",
+        "displayName": "仆刀将军",
         "source": "preset"
       },
       "profiles": [
@@ -320393,7 +320393,7 @@
         "entityType": "species",
         "canonicalId": "species.mimikyu",
         "showdownId": "Mimikyu",
-        "displayName": "谜拟Ｑ",
+        "displayName": "谜拟丘",
         "source": "preset"
       },
       "profiles": [
