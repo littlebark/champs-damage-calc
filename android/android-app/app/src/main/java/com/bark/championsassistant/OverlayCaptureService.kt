@@ -177,6 +177,8 @@ class OverlayCaptureService : Service() {
     @Volatile private var destroyed = false
     private var bubble: View? = null
     private var bubbleParams: WindowManager.LayoutParams? = null
+    private var ownMegaChip: TextView? = null
+    private var opponentMegaChip: TextView? = null
     private var teamNamePrompt: View? = null
     private var teamNamePromptParams: WindowManager.LayoutParams? = null
     private var activeToast: Toast? = null
@@ -641,7 +643,9 @@ class OverlayCaptureService : Service() {
         val buttonHeight = px(42)
         val ballSize = px(26)
         val containerWidth = px(160)
-        val containerHeight = px(114)
+        val containerHeight = px(160)
+        val chipWidth = px(76)
+        val chipHeight = px(30)
 
         fun actionButton(label: String, primary: Boolean, onClick: () -> Unit): TextView =
             TextView(overlayWindowContext).apply {
@@ -667,9 +671,39 @@ class OverlayCaptureService : Service() {
             }
 
         val container = FrameLayout(overlayWindowContext).apply { clipChildren = false }
+
+        // 两枚超级进化开关：默认关，点了只记住意图；真正换形态在「计算伤害」识别到物种之后。
+        fun megaChip(onClick: () -> Unit): TextView = TextView(overlayWindowContext).apply {
+            textSize = 10.5f
+            maxLines = 1
+            gravity = Gravity.CENTER
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            includeFontPadding = false
+            setOnClickListener { onClick() }
+        }
+        val ownChip = megaChip { toggleMegaChip(ownSide = true) }
+        val opponentChip = megaChip { toggleMegaChip(ownSide = false) }
+        ownMegaChip = ownChip
+        opponentMegaChip = opponentChip
+        container.addView(
+            ownChip,
+            FrameLayout.LayoutParams(chipWidth, chipHeight, Gravity.TOP or Gravity.START).apply {
+                topMargin = px(2)
+            },
+        )
+        container.addView(
+            opponentChip,
+            FrameLayout.LayoutParams(chipWidth, chipHeight, Gravity.TOP or Gravity.END).apply {
+                topMargin = px(2)
+            },
+        )
+        refreshMegaChips()
+
         container.addView(
             actionButton("计算\n伤害", primary = true) { captureAndComputeSnapshot() },
-            FrameLayout.LayoutParams(buttonWidth, buttonHeight, Gravity.TOP or Gravity.CENTER_HORIZONTAL),
+            FrameLayout.LayoutParams(buttonWidth, buttonHeight, Gravity.TOP or Gravity.CENTER_HORIZONTAL).apply {
+                topMargin = px(36)
+            },
         )
         container.addView(
             actionButton("关闭\n伤害", primary = false) {
@@ -680,11 +714,15 @@ class OverlayCaptureService : Service() {
         )
         container.addView(
             actionButton("识别\n队伍", primary = false) { captureAndRecognizeOwnTeam() },
-            FrameLayout.LayoutParams(buttonWidth, buttonHeight, Gravity.START or Gravity.CENTER_VERTICAL),
+            FrameLayout.LayoutParams(buttonWidth, buttonHeight, Gravity.TOP or Gravity.START).apply {
+                topMargin = px(78)
+            },
         )
         container.addView(
             actionButton("识别\n当前", primary = false) { captureAndRecordOwnStats() },
-            FrameLayout.LayoutParams(buttonWidth, buttonHeight, Gravity.END or Gravity.CENTER_VERTICAL),
+            FrameLayout.LayoutParams(buttonWidth, buttonHeight, Gravity.TOP or Gravity.END).apply {
+                topMargin = px(78)
+            },
         )
 
         val ball = TextView(overlayWindowContext).apply {
@@ -699,7 +737,12 @@ class OverlayCaptureService : Service() {
             }
             elevation = 6f
         }
-        container.addView(ball, FrameLayout.LayoutParams(ballSize, ballSize, Gravity.CENTER))
+        container.addView(
+            ball,
+            FrameLayout.LayoutParams(ballSize, ballSize, Gravity.TOP or Gravity.CENTER_HORIZONTAL).apply {
+                topMargin = px(86)
+            },
+        )
 
         val params = WindowManager.LayoutParams(
             containerWidth,
@@ -762,6 +805,41 @@ class OverlayCaptureService : Service() {
     private fun removeBubble() {
         bubble?.let { runCatching { windowManager.removeView(it) } }
         bubble = null
+        ownMegaChip = null
+        opponentMegaChip = null
+    }
+
+    private fun toggleMegaChip(ownSide: Boolean) {
+        battleOverlayController.toggleMegaSide(ownSide)
+        refreshMegaChips()
+    }
+
+    /** 把 chip 的文案/底色刷成当前会话的 Mega 状态；没会话时是「默认关」的灰样子。 */
+    private fun refreshMegaChips() {
+        val density = overlayWindowContext.resources.displayMetrics.density
+        fun px(value: Int) = (value * density).toInt()
+        val state = runCatching { battleOverlayController.megaChips() }
+            .getOrElse { BattleOverlayController.MegaChipState() }
+
+        fun apply(view: TextView?, label: String, on: Boolean, available: Boolean) {
+            view ?: return
+            view.text = label
+            view.isEnabled = available
+            view.alpha = if (available) 1f else 0.5f
+            view.setTextColor(if (on) Color.WHITE else Color.rgb(206, 230, 216))
+            view.background = GradientDrawable().apply {
+                cornerRadius = px(9).toFloat()
+                if (on) {
+                    setColor(Color.argb(240, 196, 120, 20))
+                    setStroke(px(2), Color.argb(255, 255, 208, 96))
+                } else {
+                    setColor(Color.argb(190, 24, 42, 36))
+                    setStroke(px(1), Color.argb(130, 176, 214, 198))
+                }
+            }
+        }
+        apply(ownMegaChip, state.ownLabel, state.ownOn, state.ownAvailable)
+        apply(opponentMegaChip, state.opponentLabel, state.opponentOn, state.opponentAvailable)
     }
 
     private fun showAssistantEntry(revealHiddenHud: Boolean = true) {
@@ -1282,6 +1360,7 @@ class OverlayCaptureService : Service() {
                     matched.weather,
                     matched.terrain,
                 )
+                refreshMegaChips()
                 }
             }
         }

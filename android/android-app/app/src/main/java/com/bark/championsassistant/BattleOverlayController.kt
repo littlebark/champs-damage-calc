@@ -197,8 +197,16 @@ internal class BattleOverlayController(
             hideDirectHud()
             return
         }
+        // 勾了「我方超级进化」时，读到的是超级形态的数值：新建记录直接落到 Mega 形态，基础形态不再被覆盖。
+        val megaRecord = if (existing == null && directContext.session.calculation.ownMega) {
+            presetRepository.pickMegaForm(species, directContext.session.calculation.ownMegaFormId)
+                ?.let(presetRepository::localizeSpecies)
+        } else {
+            null
+        }
+        val recordSpecies = megaRecord ?: species
         val updated = (existing?.copy(actualStats = actualStats, statPoints = statPoints)
-            ?: defaultConfigFor(species).copy(actualStats = actualStats, statPoints = statPoints))
+            ?: defaultConfigFor(recordSpecies).copy(actualStats = actualStats, statPoints = statPoints))
             .let { config ->
                 // 从状态页读到了性别就写进记录，斗争心这类按性别判定的特性要用。
                 if (config.gender == null && species.gender != null) {
@@ -210,7 +218,7 @@ internal class BattleOverlayController(
         runCatching {
             val team = TeamRepository.upsertMyPokemon(context, listOf(updated))
             val slot = team.pokemon.indexOfFirst {
-                sameSpecies(it.species, species)
+                sameSpecies(it.species, recordSpecies)
             }.coerceAtLeast(0)
             val session = directContext.session.copy(
                 selectedOwnTeamId = TeamRepository.MY_POKEMON_TEAM_ID,
@@ -225,7 +233,7 @@ internal class BattleOverlayController(
                 directDamageCache.clear()
                 val isNew = existing == null
                 publish(
-                    "已记录 ${species.displayName} 的能力值" +
+                    "已记录 ${recordSpecies.displayName} 的能力值" +
                         if (isNew) "（新增到我的宝可梦）" else "（覆盖旧数据）",
                 )
                 // 识别能力只是补数据，不重新弹伤害框：收掉旧的伤害红框，别让上一回合的数字继续挂着。
@@ -628,6 +636,137 @@ internal class BattleOverlayController(
         onOverlayVisible(false)
     }
 
+    /** 悬浮十字键上方两枚 Mega 开关的文案与状态。 */
+    data class MegaChipState(
+        val ownLabel: String = "我方MEGA",
+        val ownOn: Boolean = false,
+        val ownAvailable: Boolean = true,
+        val opponentLabel: String = "对方MEGA",
+        val opponentOn: Boolean = false,
+        val opponentAvailable: Boolean = true,
+    )
+
+    fun megaChips(): MegaChipState {
+        val directContext = battleContextCache ?: runCatching { sessionRepository.loadSession() }.getOrNull()
+            ?.let { session ->
+                val teams = runCatching { TeamRepository.load(context) }.getOrDefault(emptyList())
+                val team = teams.firstOrNull { it.id == session.selectedOwnTeamId }
+                if (team == null) null else BattleContext(session, teams, team)
+            } ?: return MegaChipState()
+        val state = directContext.session.calculation
+        val ownBase = ownBaseSpecies(directContext, state)
+        val opponentBase = opponentBaseSpecies(directContext.session, state)
+        val ownOptions = ownBase?.let(presetRepository::megaFormsFor).orEmpty()
+        val opponentOptions = opponentBase?.let(presetRepository::megaFormsFor).orEmpty()
+        return MegaChipState(
+            ownLabel = chipLabel("我方", state.ownMega, ownBase, state.ownMegaFormId),
+            ownOn = state.ownMega,
+            ownAvailable = ownBase == null || ownOptions.isNotEmpty(),
+            opponentLabel = chipLabel("对方", state.opponentMega, opponentBase, state.opponentMegaFormId),
+            opponentOn = state.opponentMega,
+            opponentAvailable = opponentBase == null || opponentOptions.isNotEmpty(),
+        )
+    }
+
+    private fun chipLabel(prefix: String, on: Boolean, species: EntityValue?, formId: String?): String {
+        if (!on) return "${prefix}MEGA"
+        val options = species?.let(presetRepository::megaFormsFor).orEmpty()
+        val picked = options.firstOrNull { it.showdownId == formId } ?: options.firstOrNull()
+        val suffix = megaSuffix(picked)
+        return "${prefix}M$suffix"
+    }
+
+    /** "Charizard-Mega-X" → "X"；"Meowstic-F-Mega" → "雌"；普通 Mega 没有后缀。 */
+    private fun megaSuffix(mega: EntityValue?): String {
+        val id = mega?.showdownId.orEmpty()
+        return when {
+            id.endsWith("-Mega-X", ignoreCase = true) -> "X"
+            id.endsWith("-Mega-Y", ignoreCase = true) -> "Y"
+            id.endsWith("-Mega-Z", ignoreCase = true) -> "Z"
+            id.contains("-F-Mega", ignoreCase = true) -> "雌"
+            id.contains("-M-Mega", ignoreCase = true) -> "雄"
+            else -> ""
+        }
+    }
+
+    private fun ownBaseSpecies(directContext: BattleContext, state: BattleCalculationState): EntityValue? {
+        val override = state.ownFormOverrides[state.ownSlot]
+        val base = directContext.ownTeam.pokemon.getOrNull(state.ownSlot)?.species
+        if (override == null) return base
+        // 覆盖已经是 Mega 形态时，回到家族里的非 Mega 那只，方便继续切下一个形态或关掉。
+        return if (presetRepository.megaFormsFor(base ?: override).any {
+                it.showdownId == override.showdownId
+            }
+        ) {
+            base
+        } else {
+            override
+        }
+    }
+
+    private fun opponentBaseSpecies(session: BattleSession, state: BattleCalculationState): EntityValue? {
+        val override = state.opponentFormOverrides[state.opponentSlot]
+        val base = session.opponentTeam.getOrNull(state.opponentSlot)
+        if (override == null) return base
+        return if (base != null && presetRepository.megaFormsFor(base).any { it.showdownId == override.showdownId }) {
+            base
+        } else {
+            override
+        }
+    }
+
+    /**
+     * 点 Mega chip：关→开（用上次选的形态，没有就取第一个）；多形态时再点切下一个；只有 1 个形态时再点关闭。
+     * 只改形态覆盖，不动物种记录，改完立刻用已有识别结果重算一次（不重新截屏）。
+     */
+    fun toggleMegaSide(ownSide: Boolean) {
+        val directContext = loadDirectHudContext() ?: return
+        val session = directContext.session
+        val state = session.calculation
+        val base = if (ownSide) ownBaseSpecies(directContext, state) else opponentBaseSpecies(session, state)
+        val options = base?.let(presetRepository::megaFormsFor).orEmpty()
+        if (base == null || options.isEmpty()) {
+            publish("这只宝可梦没有超级进化形态")
+            return
+        }
+        val currentOn = if (ownSide) state.ownMega else state.opponentMega
+        val currentFormId = if (ownSide) state.ownMegaFormId else state.opponentMegaFormId
+        val picked: EntityValue?
+        if (!currentOn) {
+            picked = presetRepository.pickMegaForm(base, currentFormId) ?: options.first()
+        } else {
+            val index = options.indexOfFirst { it.showdownId == currentFormId }.let { if (it < 0) 0 else it }
+            picked = options.getOrNull(index + 1)
+        }
+        val overrides = if (ownSide) {
+            if (picked == null) state.ownFormOverrides - state.ownSlot
+            else state.ownFormOverrides + (state.ownSlot to picked)
+        } else {
+            if (picked == null) state.opponentFormOverrides - state.opponentSlot
+            else state.opponentFormOverrides + (state.opponentSlot to picked)
+        }
+        val newState = state.copy(
+            ownMega = if (ownSide) picked != null else state.ownMega,
+            opponentMega = if (ownSide) state.opponentMega else picked != null,
+            ownMegaFormId = if (ownSide) picked?.showdownId else state.ownMegaFormId,
+            opponentMegaFormId = if (ownSide) state.opponentMegaFormId else picked?.showdownId,
+            ownFormOverrides = if (ownSide) overrides else state.ownFormOverrides,
+            opponentFormOverrides = if (ownSide) state.opponentFormOverrides else overrides,
+        )
+        val changed = session.copy(calculation = newState)
+        saveSession(changed)
+        battleContextCache = directContext.copy(session = changed)
+        directDamageCache.clear()
+        directCalculationGeneration++
+        publish(
+            when {
+                picked == null -> if (ownSide) "我方超级进化已关闭" else "对方超级进化已关闭"
+                else -> "按 ${picked.displayName} 计算"
+            },
+        )
+        if (directOverlay.isVisible) showDirectHud(battleContextCache ?: directContext.copy(session = changed))
+    }
+
     fun revealDirectHud() {
         val directContext = loadDirectHudContext() ?: return
         val state = directContext.session.calculation
@@ -654,6 +793,14 @@ internal class BattleOverlayController(
     ) {
         val localizedOwn = presetRepository.localizeSpecies(ownSpecies)
         val localizedOpponent = presetRepository.localizeSpecies(opponent)
+        // chip 勾选状态跨回合保留；Mega 形态按这次识别到的物种重新解析（换了一只就按新的物种找）。
+        val previous = runCatching { sessionRepository.loadSession() }.getOrNull()?.calculation
+        val ownMegaForm = previous?.takeIf { it.ownMega }
+            ?.let { presetRepository.pickMegaForm(localizedOwn, it.ownMegaFormId)?.let(presetRepository::localizeSpecies) }
+        val opponentMegaForm = previous?.takeIf { it.opponentMega }
+            ?.let { presetRepository.pickMegaForm(localizedOpponent, it.opponentMegaFormId)?.let(presetRepository::localizeSpecies) }
+        val ownMegaOn = ownMegaForm != null
+        val opponentMegaOn = opponentMegaForm != null
         val containingMoves = moves.take(4).ifEmpty {
             presetRepository.learnableMovesFor(localizedOwn).filter { (it.basePower ?: 0) > 0 }.take(4)
         }
@@ -694,6 +841,13 @@ internal class BattleOverlayController(
                 // 场地结束后再点一次就会自动清掉。
                 weather = weather,
                 terrain = terrain,
+                // Mega 是玩家的判断（名字 Mega 后也不变，OCR 读不出来），所以沿用上一轮 chip 的勾选。
+                ownMega = ownMegaOn,
+                opponentMega = opponentMegaOn,
+                ownMegaFormId = ownMegaForm?.showdownId ?: previous?.ownMegaFormId,
+                opponentMegaFormId = opponentMegaForm?.showdownId ?: previous?.opponentMegaFormId,
+                ownFormOverrides = ownMegaForm?.let { mapOf(slot to it) }.orEmpty(),
+                opponentFormOverrides = opponentMegaForm?.let { mapOf(0 to it) }.orEmpty(),
                 // 快照流程就是「按当前画面算伤害」，必须一进来就是计算模式，
                 // 否则 HUD 只会摆空红框，数字永远不排下去。
                 directHud = BattleDirectHudState(mode = BattleDirectHudMode.CALCULATION),

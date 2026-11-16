@@ -249,6 +249,12 @@ data class BattleCalculationState(
     val opponentConditions: Map<Int, BattlePokemonCondition> = emptyMap(),
     val speedLine: SpeedLineState = SpeedLineState(),
     val directHud: BattleDirectHudState = BattleDirectHudState(),
+    /** 手动勾选的「这回合按超级进化算」；名字和头像 Mega 后不变，只能由玩家点 chip 决定。 */
+    val ownMega: Boolean = false,
+    val opponentMega: Boolean = false,
+    /** 多形态家族（喷火龙 X/Y 等）上次选的形态，用来在下次勾选时沿用。 */
+    val ownMegaFormId: String? = null,
+    val opponentMegaFormId: String? = null,
 ) {
     fun ownCondition(slot: Int = ownSlot): BattlePokemonCondition = ownConditions[slot] ?: BattlePokemonCondition()
 
@@ -326,6 +332,10 @@ data class BattleCalculationState(
         put("opponentConditions", opponentConditions.toConditionsJson())
         put("speedLine", speedLine.toJson())
         put("directHud", directHud.toJson())
+        if (ownMega) put("ownMega", true)
+        if (opponentMega) put("opponentMega", true)
+        ownMegaFormId?.let { put("ownMegaFormId", it) }
+        opponentMegaFormId?.let { put("opponentMegaFormId", it) }
     }
 
     companion object {
@@ -379,6 +389,10 @@ data class BattleCalculationState(
             opponentConditions = opponentConditions,
             speedLine = SpeedLineState.fromJson(json.optJSONObject("speedLine")),
             directHud = BattleDirectHudState.fromJson(json.optJSONObject("directHud")),
+            ownMega = json.optBoolean("ownMega"),
+            opponentMega = json.optBoolean("opponentMega"),
+            ownMegaFormId = json.optString("ownMegaFormId").takeIf(String::isNotBlank),
+            opponentMegaFormId = json.optString("opponentMegaFormId").takeIf(String::isNotBlank),
         )
         }
     }
@@ -752,6 +766,35 @@ class OpponentPresetRepository(private val context: Context) {
     fun formsFor(species: EntityValue): List<SpeciesFormOption> {
         val selected = formBySpecies[normalizeShowdownId(species.showdownId)] ?: return emptyList()
         return formsByFamily[selected.familyId].orEmpty()
+    }
+
+    /**
+     * 这只宝可梦能超级进化成什么：按 showdownId 前缀挑家族里的 Mega 形态。
+     * 超能妙喵的 Mega 按性别拆成雄/雌两条，这里用 species.gender 选（没性别默认雄性）。
+     */
+    fun megaFormsFor(species: EntityValue): List<EntityValue> {
+        val family = formsFor(species).map { it.species }
+        val mega = family.filter { normalizeShowdownId(it.showdownId).contains("mega") }
+        if (mega.isEmpty()) return emptyList()
+        // 性别拆分（Meowstic-M-Mega / Meowstic-F-Mega）
+        val maleMega = mega.firstOrNull { it.showdownId.contains("-M-Mega", ignoreCase = true) }
+        val femaleMega = mega.firstOrNull { it.showdownId.contains("-F-Mega", ignoreCase = true) }
+        if (maleMega != null && femaleMega != null) {
+            val isFemale = species.gender == "F" ||
+                normalizeShowdownId(species.showdownId).endsWith("f")
+            return listOf(if (isFemale) femaleMega else maleMega)
+        }
+        val base = normalizeShowdownId(species.showdownId)
+        val direct = mega.filter { normalizeShowdownId(it.showdownId).startsWith(base) }
+        return direct.ifEmpty { mega }
+    }
+
+    /** 从候选里挑一个：优先上次选过的形态，否则取第一个。 */
+    fun pickMegaForm(species: EntityValue, preferredId: String?): EntityValue? {
+        val options = megaFormsFor(species)
+        if (options.isEmpty()) return null
+        return options.firstOrNull { normalizeShowdownId(it.showdownId) == normalizeShowdownId(preferredId.orEmpty()) }
+            ?: options.first()
     }
 
     fun typeMatchupsFor(species: EntityValue): Map<String, List<String>> =
