@@ -111,6 +111,50 @@ class PaddleOcrEngine(context: Context) : AutoCloseable {
         return result.sortedWith(compareBy({ it.top }, { it.left }))
     }
 
+    /** 画面上一块矩形，坐标是相对整张截图的 0..1 比例。 */
+    data class RegionRect(
+        val left: Float,
+        val top: Float,
+        val right: Float,
+        val bottom: Float,
+    )
+
+    /**
+     * 固定区域直识别：跳过检测网络，按给定矩形逐个裁剪 → 各自缩放成一行 → 单行识别。
+     * 选招页的四个招式、两个名牌位置都是固定的，比整屏检测省掉 det 和几十行无用推理。
+     * 返回与 regions 同序的文本，识别失败的位置给空串。
+     */
+    fun recognizeRegions(
+        bitmap: Bitmap,
+        regions: List<RegionRect>,
+        logTiming: Boolean = false,
+    ): List<String> {
+        val started = if (logTiming) System.currentTimeMillis() else 0L
+        val result = ArrayList<String>(regions.size)
+        for (region in regions) {
+            val left = (region.left * bitmap.width).roundToInt().coerceIn(0, bitmap.width - 1)
+            val top = (region.top * bitmap.height).roundToInt().coerceIn(0, bitmap.height - 1)
+            val right = (region.right * bitmap.width).roundToInt().coerceIn(left + 1, bitmap.width)
+            val bottom = (region.bottom * bitmap.height).roundToInt().coerceIn(top + 1, bitmap.height)
+            if (right - left < 8 || bottom - top < 8) {
+                result += ""
+                continue
+            }
+            val crop = Bitmap.createBitmap(bitmap, left, top, right - left, bottom - top)
+            val text = runCatching { runRec(crop).first }.getOrDefault("")
+            crop.recycle()
+            result += text
+        }
+        if (logTiming) {
+            Log.i(
+                LOG_TAG,
+                "recognizeRegions ${bitmap.width}x${bitmap.height} regions=${regions.size} " +
+                    "cost=${System.currentTimeMillis() - started}ms",
+            )
+        }
+        return result
+    }
+
     private fun runDet(input: FloatArray, width: Int, height: Int): FloatArray {
         val tensor = OnnxTensor.createTensor(
             env,
@@ -361,9 +405,6 @@ class PaddleOcrEngine(context: Context) : AutoCloseable {
         const val DEFAULT_DET_LIMIT = 1280
         const val REC_HEIGHT = 48
         const val REC_MAX_WIDTH = 1600
-        /** 一批最多几行、桶内宽度最多差多少像素（差太多补零会拖慢整批）。 */
-        const val REC_BATCH_SIZE = 8
-        const val BATCH_WIDTH_SLACK = 80
         /** 线程数：实测 4 比 6 快（6 会跑到小核上，检测反而从 331ms 变 780ms）。 */
         const val OC_RUNTIME_THREADS = 4
         const val DEBUG_LOGS = false

@@ -36,6 +36,7 @@ import android.view.Surface
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
+import kotlin.math.roundToInt
 import android.view.inputmethod.InputMethodManager
 import android.widget.Button
 import android.widget.EditText
@@ -85,6 +86,21 @@ class OverlayCaptureService : Service() {
         private const val CHANNEL_ID = "own_team_capture"
         private const val NOTIFICATION_ID = 4102
         private const val LOG_TAG = "OverlayCaptureService"
+        /** 选招页固定区域的最小画面宽度：低于这个值区域会缩到看不清，改走整屏检测。 */
+        private const val SNAPSHOT_ROI_MIN_WIDTH = 1200
+        /** 选招页固定区域（距左 / 距右 / 上 / 下）：对手名牌、我方名牌、天气场地、四招。 */
+        private val SNAPSHOT_REGIONS = listOf(
+            SnapshotRegion(0.772f, 0.110f, 0.042f, 0.092f),
+            SnapshotRegion(0.118f, 0.790f, 0.894f, 0.946f),
+            SnapshotRegion(0.196f, 0.688f, 0.046f, 0.094f),
+            SnapshotRegion(0.752f, 0.124f, 0.492f, 0.548f),
+            SnapshotRegion(0.752f, 0.124f, 0.612f, 0.666f),
+            SnapshotRegion(0.752f, 0.124f, 0.730f, 0.784f),
+            SnapshotRegion(0.752f, 0.124f, 0.848f, 0.906f),
+        )
+        /** 性别徽章区域，只做颜色判断（蓝底 ♂ / 粉红底 ♀），不送 OCR。 */
+        private val SNAPSHOT_OWN_GENDER_BADGE = SnapshotRegion(0.2215f, 0.7605f, 0.899f, 0.934f)
+        private val SNAPSHOT_OPPONENT_GENDER_BADGE = SnapshotRegion(0.898f, 0.072f, 0.052f, 0.086f)
         private const val CAPTURE_RESIZE_DEBOUNCE_MS = 150L
         private const val OWN_TEAM_SLOW_NOTICE_MS = 30_000L
         private const val OWN_TEAM_TIMEOUT_MS = 90_000L
@@ -1399,9 +1415,29 @@ class OverlayCaptureService : Service() {
             onBusy = { showStatusChip("上一次识别尚未结束，请稍候") },
             onFailure = { message -> publish(message) },
         ) { frame, _ ->
-            val lines = runCatching { paddleOcr?.recognize(frame, limit = 1024) ?: emptyList() }.getOrElse { error ->
-                Log.e(LOG_TAG, "PaddleOCR failed", error)
+            val roiStartedAt = System.currentTimeMillis()
+            val regionLines = runCatching { buildSnapshotRegionLines(frame) }.getOrElse { error ->
+                Log.e(LOG_TAG, "snapshot ROI 识别失败", error)
                 emptyList()
+            }
+            var matched = if (regionLines.isEmpty()) null else matchSnapshot(regionLines)
+            if (matched != null) {
+                logRecognition(
+                    "snapshot ROI lines=${regionLines.size} cost=${System.currentTimeMillis() - roiStartedAt}ms " +
+                        "own=${matched.own.displayName} opponent=${matched.opponent.displayName} " +
+                        "moves=${matched.moves.map { it.entity.displayName }}",
+                )
+            } else {
+                // 固定区域认不出（布局变化、读空、招式不足）时回落到整屏检测，准确率不低于改前。
+                logRecognition("snapshot ROI miss (${regionLines.size} lines), fallback to full det")
+                val lines = runCatching { paddleOcr?.recognize(frame, limit = 1024) ?: emptyList() }.getOrElse { error ->
+                    Log.e(LOG_TAG, "PaddleOCR failed", error)
+                    emptyList()
+                }
+                if (lines.isNotEmpty()) {
+                    logRecognition("paddle lines=" + lines.size)
+                    matched = matchSnapshot(lines.filterNot { looksLikeHudText(it.text) })
+                }
             }
             mainHandler.post {
                 recycleOwnTeamFrame(frame)
@@ -1409,18 +1445,11 @@ class OverlayCaptureService : Service() {
                 recognizing = false
                 frameTrackingEnabled = true
                 showAssistantEntry()
-                if (lines.isEmpty()) {
-                    logRecognition("paddle lines=0")
-                    publish("没读到画面文字，请停在能看到四个招式的画面再点一次")
-                    return@post
-                }
-                logRecognition("paddle lines=" + lines.size)
-                val matched = matchSnapshot(lines.filterNot { looksLikeHudText(it.text) })
                 if (matched == null) {
-                    logRecognition("snapshot match FAILED (paddle)")
+                    logRecognition("snapshot match FAILED")
                     publish("没认出双方或招式，请停在能看到四个招式的画面再点一次")
                 } else {
-                    battleOverlayController.startSnapshotSession(
+                battleOverlayController.startSnapshotSession(
                     matched.own,
                     matched.moves,
                     matched.opponent,
@@ -1441,6 +1470,128 @@ class OverlayCaptureService : Service() {
         val weather: String = "NONE",
         val terrain: String = "NONE",
     )
+
+    /**
+     * 一块固定识别区域：横向按「距左边 / 距右边」定义（游戏的招式条和对手名牌贴右边缘、
+     * 我方名牌和天气条贴左边缘，换屏宽也不会整体错位），纵向按画面高度比例。
+     */
+    private class SnapshotRegion(
+        val leftInset: Float,
+        val rightInset: Float,
+        val top: Float,
+        val bottom: Float,
+    ) {
+        fun pixelBounds(frame: Bitmap): IntArray {
+            val left = (leftInset * frame.width).roundToInt().coerceIn(0, frame.width - 1)
+            val right = (frame.width - rightInset * frame.width).roundToInt().coerceIn(left + 1, frame.width)
+            val topPixel = (top * frame.height).roundToInt().coerceIn(0, frame.height - 1)
+            val bottomPixel = (bottom * frame.height).roundToInt().coerceIn(topPixel + 1, frame.height)
+            return intArrayOf(left, topPixel, right, bottomPixel)
+        }
+    }
+
+    /**
+     * 按固定区域直接识别「计算伤害」页（选招页）：只裁 4 个招式 + 2 个名牌 + 天气条，
+     * 跳过整屏检测，跑得快得多。坐标实测自真机 2772×1280 截图。
+     * 返回能直接交给 [matchSnapshot] 的文本行（带真实像素位置）；读不全时返回空列表，
+     * 由调用方回落到整屏检测，保证准确率不比改前低。
+     */
+    private fun buildSnapshotRegionLines(frame: Bitmap): List<SnapshotTextLine> {
+        val engine = paddleOcr ?: return emptyList()
+        // 画面太窄时这些固定区域会缩到几十像素，字会糊，直接用整屏检测更稳。
+        if (frame.width < SNAPSHOT_ROI_MIN_WIDTH) return emptyList()
+        val regions = SNAPSHOT_REGIONS
+        val bounds = ArrayList<IntArray>(regions.size)
+        val rects = ArrayList<PaddleOcrEngine.RegionRect>(regions.size)
+        for (region in regions) {
+            val pixels = region.pixelBounds(frame)
+            bounds += pixels
+            rects += PaddleOcrEngine.RegionRect(
+                left = pixels[0].toFloat() / frame.width,
+                top = pixels[1].toFloat() / frame.height,
+                right = pixels[2].toFloat() / frame.width,
+                bottom = pixels[3].toFloat() / frame.height,
+            )
+        }
+        val texts = engine.recognizeRegions(frame, rects).map { cleanRegionText(it) }
+        val opponentName = texts.getOrNull(0).orEmpty()
+        val ownName = texts.getOrNull(1).orEmpty()
+        val field = texts.getOrNull(2).orEmpty()
+        val moves = texts.drop(3).filter { it.isNotEmpty() }
+        if (ownName.isEmpty() || opponentName.isEmpty() || moves.size < 3) {
+            logRecognition(
+                "snapshot ROI texts own='$ownName' opp='$opponentName' moves=$moves field='$field'",
+            )
+            return emptyList()
+        }
+        val ownGender = readGenderBadge(frame, SNAPSHOT_OWN_GENDER_BADGE)
+        val opponentGender = readGenderBadge(frame, SNAPSHOT_OPPONENT_GENDER_BADGE)
+        logRecognition(
+            "snapshot ROI texts own='$ownName${ownGender.orEmpty()}' " +
+                "opp='$opponentName${opponentGender.orEmpty()}' moves=$moves field='$field'",
+        )
+        val lines = ArrayList<SnapshotTextLine>(texts.size)
+        fun add(index: Int, text: String) {
+            val pixels = bounds[index]
+            lines += SnapshotTextLine(
+                text = text,
+                left = pixels[0],
+                top = pixels[1],
+                right = pixels[2],
+                bottom = pixels[3],
+                imageWidth = frame.width,
+                imageHeight = frame.height,
+            )
+        }
+        add(0, opponentName + opponentGender.orEmpty())
+        add(1, ownName + ownGender.orEmpty())
+        if (field.isNotEmpty()) add(2, field)
+        texts.drop(3).forEachIndexed { offset, text ->
+            if (text.isNotEmpty()) add(3 + offset, text)
+        }
+        return lines
+    }
+
+    /**
+     * 只保留中文和字母，去掉 OCR 在图标残影、背景花纹上"强行认出来"的数字和符号
+     * （例如招式图标边的「1」、墙面花纹的「6」）。
+     */
+    private fun cleanRegionText(text: String): String {
+        val builder = StringBuilder()
+        for (character in text) {
+            if (character in '\u4E00'..'\u9FFF' || character.isLetter()) builder.append(character)
+        }
+        return builder.toString()
+    }
+
+    /**
+     * 性别徽章靠底色判断：蓝底是 ♂、粉红底是 ♀。徽章只有 20 多像素，送 OCR 会把 ♂ 读成「3」，
+     * 所以这里只做颜色统计。
+     */
+    private fun readGenderBadge(frame: Bitmap, region: SnapshotRegion): String? {
+        val pixelsBounds = region.pixelBounds(frame)
+        val width = pixelsBounds[2] - pixelsBounds[0]
+        val height = pixelsBounds[3] - pixelsBounds[1]
+        if (width < 4 || height < 4) return null
+        val pixels = IntArray(width * height)
+        frame.getPixels(pixels, 0, width, pixelsBounds[0], pixelsBounds[1], width, height)
+        var blue = 0
+        var pink = 0
+        for (pixel in pixels) {
+            val red = (pixel shr 16) and 0xFF
+            val green = (pixel shr 8) and 0xFF
+            val blueValue = pixel and 0xFF
+            if (blueValue > red + 40 && blueValue > green + 20) blue++
+            else if (red > blueValue + 40 && red > green + 25) pink++
+        }
+        val colored = blue + pink
+        if (colored < width * height / 20) return null
+        return when {
+            blue > pink * 1.3f -> "♂"
+            pink > blue * 1.3f -> "♀"
+            else -> null
+        }
+    }
 
     /** 与 BATTLE_TERRAIN_VALUES / BATTLE_WEATHER_VALUES 对齐的画面文案。 */
     private val SNAPSHOT_TERRAIN_KEYWORDS = listOf(
