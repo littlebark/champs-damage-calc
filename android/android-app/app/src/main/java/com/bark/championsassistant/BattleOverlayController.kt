@@ -801,9 +801,11 @@ internal class BattleOverlayController(
      * 还没识别到对手时先存成「本局意向」，等计算伤害读到宝可梦后再匹配（见 startSnapshotSession）。
      */
     fun setOpponentMegaSuffix(suffix: String?) {
+        // 先记成「下一次计算用哪类」，这样先点 Mega 再点计算、或者点完计算立刻切形态都成立。
+        // 下一次「计算伤害」消费后就会清掉，不会无限沿用。
+        storePendingOpponentMegaSuffix(suffix)
         val directContext = loadDirectHudContext()
         if (directContext == null) {
-            storePendingOpponentMegaSuffix(suffix)
             if (suffix != null) publish("对方按 ${opponentChipLabel(suffix)} 记下，识别到宝可梦后再套用")
             return
         }
@@ -813,7 +815,6 @@ internal class BattleOverlayController(
         val picked = base?.let { presetRepository.pickMegaFormForSuffix(it, suffix) }
         // 匹配不到（这只没有这类 Mega）就静默按不 mega 算，不弹提示。
         val effective = if (suffix == null) null else picked
-        storePendingOpponentMegaSuffix(null)
         val newState = state.copy(
             opponentMega = effective != null,
             opponentMegaFormId = effective?.showdownId,
@@ -878,10 +879,9 @@ internal class BattleOverlayController(
         }
         // 玩家可能先点了「对方MEGA」再点计算：这时只知道类别（普通/X/Y/Z），用后缀去识别到的家族里匹配；
         // 匹配不到（这只没有这类形态）就静默按不 mega 算。
+        // 注意：每次点计算都重新开始，不沿用上一回合选的类别——对手可能已经换人，旧选择会套错对象。
         val pendingSuffix = pendingOpponentMegaSuffix()
         val opponentSuffix = pendingSuffix
-            ?: previous?.takeIf { it.opponentMega }?.opponentMegaSuffix
-            ?: previous?.takeIf { it.opponentMega }?.opponentMegaFormId?.let(presetRepository::megaFormSuffix)
         val opponentMegaForm = if (opponentSuffix != null) {
             presetRepository.pickMegaFormForSuffix(localizedOpponent, opponentSuffix)
                 ?.let(presetRepository::localizeSpecies)
