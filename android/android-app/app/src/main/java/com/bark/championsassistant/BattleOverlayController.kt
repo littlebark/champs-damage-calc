@@ -663,12 +663,12 @@ internal class BattleOverlayController(
         )
         val state = directContext.session.calculation
         val ownBase = ownBaseSpecies(directContext, state)
-        val opponentBase = opponentBaseSpecies(directContext.session, state)
-        val ownOptions = ownBase?.let(presetRepository::megaFormsFor).orEmpty()
         return MegaChipState(
             ownLabel = ownChipLabel(ownBase, state),
             ownOn = state.ownMega,
-            ownAvailable = ownBase == null || ownOptions.isNotEmpty(),
+            // 我方也不再置灰：换人后没重新识别时这里只是旧物种，灰掉会误伤玩家。
+            // 真点了而当前这只没有 Mega，toggleOwnMega 会静默按不 mega 算。
+            ownAvailable = true,
             // 对手永远可点：可能已经换人、也可能我们看错了，不能因为当前这只没有 Mega 就锁死。
             opponentLabel = if (state.opponentMega) {
                 opponentChipLabel(state.opponentMegaSuffix ?: megaSuffix(state.opponentFormOverrides[state.opponentSlot]))
@@ -814,6 +814,8 @@ internal class BattleOverlayController(
         val base = opponentBaseSpecies(session, state)
         val picked = base?.let { presetRepository.pickMegaFormForSuffix(it, suffix) }
         // 匹配不到（这只没有这类 Mega）就静默按不 mega 算，不弹提示。
+        // 「待套用」的意向要留着：点 chip 时常常还没识别到对手，chip 显示成已选是预期行为，
+        // 真正能不能套上由这一次识别到的物种决定。
         val effective = if (suffix == null) null else picked
         val newState = state.copy(
             opponentMega = effective != null,

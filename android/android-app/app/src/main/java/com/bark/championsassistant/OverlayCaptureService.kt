@@ -1632,47 +1632,25 @@ class OverlayCaptureService : Service() {
         val imageWidth = lines.firstOrNull()?.imageWidth ?: return null
         val imageHeight = lines.firstOrNull()?.imageHeight ?: return null
         val species = presetRepository.speciesCatalog
-        fun fuzzyHit(text: String, name: String): Boolean {
-            val t = text.filter { it.isLetterOrDigit() }.lowercase()
-            val n = name.filter { it.isLetterOrDigit() }.lowercase()
-            if (n.length < 2 || t.length < n.length) return false
-            if (t.contains(n)) return true
-            if (n.length < 3) return false
-            for (start in 0..(t.length - n.length)) {
-                var diff = 0
-                for (offset in n.indices) if (t[start + offset] != n[offset]) diff++
-                if (diff <= 1) return true
-            }
-            return false
-        }
-        // 招式名和宝可梦名一样做模糊匹配：OCR 经常把贴边的第一个字吃掉
-        // （"广域战力" → "域战力"），所以先容错「识别文本是正式名的一部分」，
-        // 再容错一字之差；只有 2 字以上的残片才允许，避免 "电" 这种单字乱撞。
-        fun moveFuzzyHit(text: String, name: String): Boolean {
-            val t = text.filter { it.isLetterOrDigit() }.lowercase()
-            val n = name.filter { it.isLetterOrDigit() }.lowercase()
-            if (t.isEmpty() || n.isEmpty()) return false
-            if (n.length >= 2 && t.contains(n)) return true
-            if (t.length >= 2 && n.contains(t) && n.length - t.length <= 2) return true
-            if (n.length >= 3 && t.length >= 3) {
-                for (start in 0..(t.length - n.length)) {
-                    var diff = 0
-                    for (offset in n.indices) if (t[start + offset] != n[offset]) diff++
-                    if (diff <= 1) return true
-                }
-            }
-            return false
-        }
-        fun matchSpecies(text: String): EntityValue? = species
-            .filter { it.displayName.length >= 2 && fuzzyHit(text, it.displayName) }
-            .maxByOrNull { it.displayName.length }
+        // 名字归一打分见 SnapshotNameMatcher：完全同名压过只差一个字，避免喷火龙被认成喷火驼。
+        fun scoreName(text: String, name: String, allowFragment: Boolean): Int =
+            SnapshotNameMatcher.score(text, name, allowFragment)
+        fun matchSpecies(text: String): EntityValue? =
+            SnapshotNameMatcher.bestMatch(text, species, EntityValue::displayName, allowFragment = false)
+        fun matchMove(text: String, candidates: List<MoveValue>): MoveValue? =
+            SnapshotNameMatcher.bestMatch(text, candidates, { it.entity.displayName }, allowFragment = true)
         // 先按字面匹配，再用词库（宝可梦正式名）做编辑距离纠正，避免“玛カ露丽”这类一字之差。
         fun resolveSpecies(text: String): EntityValue? {
             matchSpecies(text)?.let { return it }
             val official = runCatching { ocrVocabulary.correctToOfficialName(text, "species") }.getOrNull()
                 ?: return null
             return species.firstOrNull { it.displayName == official }
-                ?: species.firstOrNull { fuzzyHit(official, it.displayName) }
+                ?: SnapshotNameMatcher.bestMatch(
+                    official,
+                    species,
+                    EntityValue::displayName,
+                    allowFragment = false,
+                )
         }
         val speciesLines = lines.mapNotNull { line -> resolveSpecies(line.text)?.let { line to it } }
         // 对手名牌在右上、我方名牌在左下；不依赖严格阈值，按相对位置取最靠上/最靠下的一条。
@@ -1695,9 +1673,7 @@ class OverlayCaptureService : Service() {
             .filter { it.left > imageWidth * 0.45 }
             .sortedBy { it.top }
             .mapNotNull { line ->
-                learnable
-                    .filter { it.entity.displayName.length >= 2 && moveFuzzyHit(line.text, it.entity.displayName) }
-                    .maxByOrNull { it.entity.displayName.length }
+                matchMove(line.text, learnable)
                     ?: runCatching { ocrVocabulary.correctToOfficialName(line.text, "move") }.getOrNull()
                         ?.let { official -> learnable.firstOrNull { it.entity.displayName == official } }
             }
@@ -1707,6 +1683,17 @@ class OverlayCaptureService : Service() {
         } else {
             moveLines.take(4)
         }
+        // 把「OCR 原文 → 选中的正式名 → 打分」写进 recognition.log：
+        // 以后再出现认错（比如喷火龙被认成喷火驼），一眼能看出是 OCR 读错还是匹配挑错。
+        logRecognition(
+            "snapshot names " +
+                "own('${ownLine.first.text}'→${own.displayName}/score=${scoreName(ownLine.first.text, own.displayName, false)}) " +
+                "opp('${opponentLine.first.text}'→${opponent.displayName}/score=${scoreName(opponentLine.first.text, opponent.displayName, false)}) " +
+                "moves=" + lines.filter { it.left > imageWidth * 0.45 }.sortedBy { it.top }
+                .joinToString(" | ") { line ->
+                    "'${line.text}'→" + (matchMove(line.text, learnable)?.entity?.displayName ?: "?")
+                },
+        )
         Log.i(LOG_TAG, "Snapshot matched: own=${own.displayName} opponent=${opponent.displayName} moves=${moves.map { it.entity.displayName }}")
         // 回合开始后左上角会写「精神场地状态 5/5」「沙暴状态 4/5」这类字段效果，
         // 只有有限回合，所以只带到这一次计算里，不沿用。
