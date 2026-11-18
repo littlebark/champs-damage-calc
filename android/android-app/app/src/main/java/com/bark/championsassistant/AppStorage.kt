@@ -31,10 +31,13 @@ internal fun File.writeUtf8Atomically(body: String) {
     }
 }
 
-/** Removes JSON files exported by builds that predate app-private storage. */
+/**
+ * 一次性清理：早期版本把识别结果写成「整队文件」存到下载目录和 App 私有目录，
+ * 现在识别结果直接并进「我的宝可梦」（`my-pokemon.json`），这些中转文件全部作废。
+ */
 object LegacyRecognitionStorageMigration {
     private const val PREFERENCES = "storage_migrations"
-    private const val MIGRATION_KEY = "private_team_storage_v1"
+    private const val MIGRATION_KEY = "private_team_storage_v2"
 
     fun runInBackground(context: Context) {
         val appContext = context.applicationContext
@@ -57,6 +60,15 @@ object LegacyRecognitionStorageMigration {
             removed += directory.walkBottomUp().count { it.isFile && it.delete() }
             directory.deleteRecursively()
         }
+
+        // App 私有目录里遗留的整队文件（识别队伍的中转文件、旧的阵容预览导出）。
+        context.filesDir.resolve("saved-teams")
+            .listFiles { file ->
+                file.isFile && (file.name.startsWith("android-own-team-") ||
+                    file.name.startsWith("android-team-preview-"))
+            }
+            .orEmpty()
+            .forEach { file -> if (file.delete()) removed += 1 }
 
         val privateTeams = context.filesDir.resolve("saved-teams")
         val collection = MediaStore.Downloads.EXTERNAL_CONTENT_URI

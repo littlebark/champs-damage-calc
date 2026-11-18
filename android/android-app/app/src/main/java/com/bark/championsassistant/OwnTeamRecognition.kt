@@ -1357,19 +1357,16 @@ class OwnTeamImportRepository(private val context: Context) {
         require(incomplete.isEmpty()) {
             "第 ${incomplete.joinToString("、") { (it.slotIndex + 1).toString() }} 只宝可梦仍有内容需要补全"
         }
-        val saved = createCorrectedSavedTeam(name, draft, slots.sortedBy(OwnTeamCorrectionSlot::slotIndex))
-        val fileName = saved.getString("savedTeamId") + ".json"
-        context.filesDir.resolve("saved-teams").resolve(fileName)
-            .writeUtf8Atomically(saved.toString(2))
+        val corrected = createCorrectedSavedTeam(name, draft, slots.sortedBy(OwnTeamCorrectionSlot::slotIndex))
         context.filesDir.resolve(DRAFT_FILE).delete()
         context.filesDir.resolve(PENDING_FILE).delete()
         moveItemPage = null
         statsPage = null
-        return ImportSaveResult("队伍“$name”已修正并保存，可在首页和计算页使用", fileName, saved)
+        return commitToMyPokemon(corrected, "我方 {n} 只宝可梦已修正并保存")
     }
 
     /**
-     * 两张页面都在时直接生成队伍并保存，不要求每只宝可梦的字段都识别完整。
+     * 两张页面都在时直接生成队伍并入库，不要求每只宝可梦的字段都识别完整。
      * 缺的字段由调用方事后按图鉴默认补齐。
      */
     fun saveCurrentImportLenient(teamName: String): ImportSaveResult {
@@ -1384,14 +1381,11 @@ class OwnTeamImportRepository(private val context: Context) {
             put("teamSlotName", name)
             put("updatedAt", now)
         }
-        val fileName = saved.getString("savedTeamId") + ".json"
-        context.filesDir.resolve("saved-teams").resolve(fileName)
-            .writeUtf8Atomically(saved.toString(2))
         context.filesDir.resolve(DRAFT_FILE).delete()
         context.filesDir.resolve(PENDING_FILE).delete()
         moveItemPage = null
         statsPage = null
-        return ImportSaveResult("队伍“$name”已保存", fileName, saved)
+        return commitToMyPokemon(saved, "已记录我方 {n} 只宝可梦（$name）")
     }
 
     fun savePendingTeam(teamName: String): ImportSaveResult {
@@ -1406,11 +1400,18 @@ class OwnTeamImportRepository(private val context: Context) {
             put("teamSlotName", name)
             put("updatedAt", now)
         }
-        val fileName = saved.getString("savedTeamId") + ".json"
-        context.filesDir.resolve("saved-teams").resolve(fileName)
-            .writeUtf8Atomically(saved.toString(2))
         pending.delete()
-        return ImportSaveResult("队伍“$name”已保存，可在首页和计算页使用", fileName, saved)
+        return commitToMyPokemon(saved, "已记录我方 {n} 只宝可梦（$name）")
+    }
+
+    /**
+     * 我们的风格：识别结果直接并进「我的宝可梦」（按物种 upsert 的单一列表），
+     * 不再落 `android-own-team-*.json` 这种「中转一下就没用」的整队文件。
+     */
+    private fun commitToMyPokemon(teamJson: JSONObject, messageFormat: String): ImportSaveResult {
+        val parsed = TeamRepository.parseTeam(teamJson, userSaved = true)
+        TeamRepository.upsertMyPokemon(context, parsed.pokemon)
+        return ImportSaveResult(messageFormat.replace("{n}", parsed.pokemon.size.toString()))
     }
 
     private fun persistDraft() {
@@ -1448,8 +1449,9 @@ class OwnTeamImportRepository(private val context: Context) {
         syncDraftState()
         val stats = statsPage ?: error("还没有识别“能力值”页面")
         val now = Instant.now()
-        val stamp = DateTimeFormatter.ofPattern("yyyyMMddHHmmss").withZone(ZoneId.systemDefault()).format(now)
-        val savedTeamId = "android-own-team-$stamp"
+        val savedTeamId = "android-own-team-${
+            DateTimeFormatter.ofPattern("yyyyMMddHHmmss").withZone(ZoneId.systemDefault()).format(now)
+        }"
         val members = JSONArray()
         stats.slots.forEach { statSlot ->
             val species = statSlot.species ?: return@forEach
@@ -1483,12 +1485,11 @@ class OwnTeamImportRepository(private val context: Context) {
             put("updatedAt", Instant.now().toString())
         }
         val fileName = savedTeamId + ".json"
-        context.filesDir.resolve("saved-teams").resolve(fileName).writeUtf8Atomically(saved.toString(2))
         context.filesDir.resolve(DRAFT_FILE).delete()
         context.filesDir.resolve(PENDING_FILE).delete()
         moveItemPage = null
         statsPage = null
-        return ImportSaveResult("队伍“$name”已保存（仅能力值）", fileName, saved)
+        return commitToMyPokemon(saved, "已记录我方 {n} 只宝可梦（仅能力值）")
     }
 
     private fun createSavedTeam(move: RecognizedOwnTeamPage, stats: RecognizedOwnTeamPage): JSONObject {

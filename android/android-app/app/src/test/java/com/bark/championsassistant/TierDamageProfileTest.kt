@@ -45,6 +45,28 @@ class TierDamageProfileTest {
         assertEquals("Calm", special.getJSONObject("statAlignment").getString("showdownId"))
     }
 
+    @Test
+    fun `defender stat stages are copied into every tier profile`() {
+        val stages = BattleStatStages(def = -2, spd = -2).toJson()
+        val set = tierDefenderProfileSet(species, stages)
+        val profiles = set.getJSONArray("profiles")
+
+        for (index in 0 until profiles.length()) {
+            val profile = profiles.getJSONObject(index)
+            assertEquals(-2, profile.getJSONObject("statStages").getInt("def"))
+            assertEquals(-2, profile.getJSONObject("statStages").getInt("spd"))
+        }
+    }
+
+    @Test
+    fun `zero stat stages do not add a statStages key`() {
+        val set = tierDefenderProfileSet(species, BattleStatStages().toJson())
+        val profiles = set.getJSONArray("profiles")
+        for (index in 0 until profiles.length()) {
+            assertTrue(profiles.getJSONObject(index).optJSONObject("statStages") == null)
+        }
+    }
+
     private fun profileIds(profiles: org.json.JSONArray): List<String> =
         (0 until profiles.length()).map { profiles.getJSONObject(it).getString("profileId") }
 }

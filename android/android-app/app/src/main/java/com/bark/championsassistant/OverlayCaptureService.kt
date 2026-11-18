@@ -88,6 +88,8 @@ class OverlayCaptureService : Service() {
         private const val LOG_TAG = "OverlayCaptureService"
         /** 选招页固定区域的最小画面宽度：低于这个值区域会缩到看不清，改走整屏检测。 */
         private const val SNAPSHOT_ROI_MIN_WIDTH = 1200
+        /** 形态识别第一版先留一份裁下来的头像在 files/debug-icons，方便核对 ROI。 */
+        private const val DEBUG_ICON_DIR = true
         /** 选招页固定区域（距左 / 距右 / 上 / 下）：对手名牌、我方名牌、天气场地、四招。 */
         private val SNAPSHOT_REGIONS = listOf(
             SnapshotRegion(0.772f, 0.110f, 0.042f, 0.092f),
@@ -101,6 +103,12 @@ class OverlayCaptureService : Service() {
         /** 性别徽章区域，只做颜色判断（蓝底 ♂ / 粉红底 ♀），不送 OCR。 */
         private val SNAPSHOT_OWN_GENDER_BADGE = SnapshotRegion(0.2215f, 0.7605f, 0.899f, 0.934f)
         private val SNAPSHOT_OPPONENT_GENDER_BADGE = SnapshotRegion(0.898f, 0.072f, 0.052f, 0.086f)
+        /**
+         * 名牌左侧的小头像（连同一圈底板）：形态识别只看这两块。
+         * 对手在右上、我方在左下，底板左缘会随名字长度浮动，框留了余量，靠底板色把本体抠出来。
+         */
+        private val SNAPSHOT_OPPONENT_ICON = SnapshotRegion(0.745f, 0.185f, 0.020f, 0.175f)
+        private val SNAPSHOT_OWN_ICON = SnapshotRegion(0.038f, 0.900f, 0.845f, 0.970f)
         private const val CAPTURE_RESIZE_DEBOUNCE_MS = 150L
         private const val OWN_TEAM_SLOW_NOTICE_MS = 30_000L
         private const val OWN_TEAM_TIMEOUT_MS = 90_000L
@@ -196,6 +204,8 @@ class OverlayCaptureService : Service() {
     private var bubbleParams: WindowManager.LayoutParams? = null
     private var ownMegaChip: TextView? = null
     private var opponentMegaChip: TextView? = null
+    private var ownStageChip: TextView? = null
+    private var opponentStageChip: TextView? = null
     private var teamNamePrompt: View? = null
     private var teamNamePromptParams: WindowManager.LayoutParams? = null
     private var activeToast: Toast? = null
@@ -304,6 +314,9 @@ class OverlayCaptureService : Service() {
             },
         )
         refreshOwnTeamRecognitionState()
+        // 每次启动助手都是新一轮对局：把上一局留在偏好里的 Mega / 形态 / 能力等级意图清掉，
+        // 否则一打开 App「我方MEGA」就是亮的（那是上一局点的）。
+        battleOverlayController.resetPendingBattleIntents()
         createNotificationChannel()
     }
 
@@ -660,22 +673,32 @@ class OverlayCaptureService : Service() {
         val buttonHeight = px(42)
         val ballSize = px(26)
         val containerWidth = px(160)
-        val containerHeight = px(160)
+        // 整块高度按内容收紧：顶排 chip 2~32、计算/关闭 36~78、识别 82~108、能力等级 116~142，
+        // 拖动球塞进计算/关闭中间那道 26dp 的空隙，所以底部那片空白也没了。
+        val containerHeight = px(142)
         val chipWidth = px(76)
         val chipHeight = px(30)
+        // 顶排三枚挤在 160dp 里，各 52dp，字缩到 9.5sp。
+        val topChipWidth = px(52)
+        val stageChipHeight = px(26)
 
-        fun actionButton(label: String, primary: Boolean, onClick: () -> Unit): TextView =
+        fun actionButton(
+            label: String,
+            primary: Boolean,
+            small: Boolean = false,
+            onClick: () -> Unit,
+        ): TextView =
             TextView(overlayWindowContext).apply {
                 text = label
-                textSize = 13f
-                maxLines = 2
+                textSize = if (small) 10f else 13f
+                maxLines = if (small) 1 else 2
                 setLineSpacing(px(1).toFloat(), 1f)
                 gravity = Gravity.CENTER
                 setTypeface(typeface, android.graphics.Typeface.BOLD)
                 includeFontPadding = false
                 setTextColor(if (primary) Color.WHITE else Color.rgb(232, 244, 238))
                 background = GradientDrawable().apply {
-                    cornerRadius = px(12).toFloat()
+                    cornerRadius = px(if (small) 8 else 12).toFloat()
                     if (primary) {
                         setColor(Color.argb(236, 16, 150, 108))
                         setStroke(px(2), Color.argb(255, 118, 246, 200))
@@ -689,9 +712,11 @@ class OverlayCaptureService : Service() {
 
         val container = FrameLayout(overlayWindowContext).apply { clipChildren = false }
 
-        // 两枚超级进化开关：默认关，点了只记住意图；真正换形态在「计算伤害」识别到物种之后。
+        // 顶排两枚：我方MEGA / 对方MEGA。玩家点任何一枚，都会先快速读一次对手名牌，
+        // 两枚共用同一次读取结果——chip 只表示状态，真正套用仍然在「计算伤害」。
+        // 形态不占 chip：由「计算伤害」前的头像识别决定（坚盾剑怪另有双行补算）。
         fun megaChip(onClick: () -> Unit): TextView = TextView(overlayWindowContext).apply {
-            textSize = 10.5f
+            textSize = 9.5f
             maxLines = 1
             gravity = Gravity.CENTER
             setTypeface(typeface, android.graphics.Typeface.BOLD)
@@ -704,22 +729,40 @@ class OverlayCaptureService : Service() {
         opponentMegaChip = opponentChip
         container.addView(
             ownChip,
-            FrameLayout.LayoutParams(chipWidth, chipHeight, Gravity.TOP or Gravity.START).apply {
+            FrameLayout.LayoutParams(topChipWidth, chipHeight, Gravity.TOP or Gravity.START).apply {
                 topMargin = px(2)
             },
         )
         container.addView(
             opponentChip,
-            FrameLayout.LayoutParams(chipWidth, chipHeight, Gravity.TOP or Gravity.END).apply {
+            FrameLayout.LayoutParams(topChipWidth, chipHeight, Gravity.TOP or Gravity.END).apply {
                 topMargin = px(2)
             },
         )
         refreshMegaChips()
 
+        // 能力等级：最下方左右各一个，默认 0，点一下弹出加减面板。
+        val ownStage = megaChip { onStageChip(own = true) }
+        val opponentStage = megaChip { onStageChip(own = false) }
+        ownStageChip = ownStage
+        opponentStageChip = opponentStage
+        container.addView(
+            ownStage,
+            FrameLayout.LayoutParams(chipWidth, stageChipHeight, Gravity.BOTTOM or Gravity.START),
+        )
+        container.addView(
+            opponentStage,
+            FrameLayout.LayoutParams(chipWidth, stageChipHeight, Gravity.BOTTOM or Gravity.END),
+        )
+        refreshStageChips()
+
+        // 「计算伤害」和「关闭伤害」同一行、同样大小，中间留出 26dp 放拖动球：
+        // 左边算、中间拖、右边关。
         container.addView(
             actionButton("计算\n伤害", primary = true) { captureAndComputeSnapshot() },
-            FrameLayout.LayoutParams(buttonWidth, buttonHeight, Gravity.TOP or Gravity.CENTER_HORIZONTAL).apply {
+            FrameLayout.LayoutParams(buttonWidth, buttonHeight, Gravity.TOP or Gravity.START).apply {
                 topMargin = px(36)
+                leftMargin = px(3)
             },
         )
         container.addView(
@@ -727,18 +770,22 @@ class OverlayCaptureService : Service() {
                 battleOverlayController.hideDirectHud()
                 showStatusChip("已关闭伤害 HUD")
             },
-            FrameLayout.LayoutParams(buttonWidth, buttonHeight, Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL),
+            FrameLayout.LayoutParams(buttonWidth, buttonHeight, Gravity.TOP or Gravity.END).apply {
+                topMargin = px(36)
+                rightMargin = px(3)
+            },
         )
+        // 「识别队伍 / 识别当前」用得少，缩到和能力等级 chip 一样的小块。
         container.addView(
-            actionButton("识别\n队伍", primary = false) { captureAndRecognizeOwnTeam() },
-            FrameLayout.LayoutParams(buttonWidth, buttonHeight, Gravity.TOP or Gravity.START).apply {
-                topMargin = px(78)
+            actionButton("识别队伍", primary = false, small = true) { captureAndRecognizeOwnTeam() },
+            FrameLayout.LayoutParams(chipWidth, stageChipHeight, Gravity.TOP or Gravity.START).apply {
+                topMargin = px(82)
             },
         )
         container.addView(
-            actionButton("识别\n当前", primary = false) { captureAndRecordOwnStats() },
-            FrameLayout.LayoutParams(buttonWidth, buttonHeight, Gravity.TOP or Gravity.END).apply {
-                topMargin = px(78)
+            actionButton("识别当前", primary = false, small = true) { captureAndRecordOwnStats() },
+            FrameLayout.LayoutParams(chipWidth, stageChipHeight, Gravity.TOP or Gravity.END).apply {
+                topMargin = px(82)
             },
         )
 
@@ -754,10 +801,11 @@ class OverlayCaptureService : Service() {
             }
             elevation = 6f
         }
+        // 拖动球就停在「计算/关闭」中间那道缝里（36~78 那一行，球 26dp 居中 → 上边距 44）。
         container.addView(
             ball,
             FrameLayout.LayoutParams(ballSize, ballSize, Gravity.TOP or Gravity.CENTER_HORIZONTAL).apply {
-                topMargin = px(86)
+                topMargin = px(44)
             },
         )
 
@@ -824,6 +872,8 @@ class OverlayCaptureService : Service() {
         bubble = null
         ownMegaChip = null
         opponentMegaChip = null
+        ownStageChip = null
+        opponentStageChip = null
     }
 
     /** 我方只开/关：形态由持有物决定，不用每次点都选。 */
@@ -834,9 +884,20 @@ class OverlayCaptureService : Service() {
 
     /**
      * 对手无法推断（不知道道具、也可能 X 也可能 Y），所以只让玩家选「哪一类」：
-     * 关闭 / 普通 Mega / X / Y / Z。还没识别到对手时也能点，先记着，计算伤害时按识别到的家族匹配。
+     * 关闭 / 普通 Mega / X / Y / Z。点之前先快速读一次对手名牌，把会话里的对手换成屏幕上这只，
+     * 免得菜单里那些「家族里有没有这个形态」的判断还落在上一局的物种上。
      */
     private fun onOpponentMegaChip() {
+        readOpponentQuickly { species ->
+            if (species != null) {
+                battleOverlayController.updateOpponentIdentity(species)
+                refreshMegaChips()
+            }
+            showOpponentMegaMenu(opponentKnown = species != null)
+        }
+    }
+
+    private fun showOpponentMegaMenu(opponentKnown: Boolean) {
         val anchor = opponentMegaChip ?: bubble ?: return
         val density = overlayWindowContext.resources.displayMetrics.density
         fun px(value: Int) = (value * density).toInt()
@@ -875,26 +936,116 @@ class OverlayCaptureService : Service() {
             dismiss()
             refreshMegaChips()
         }
-
-        listOf(
-            "关闭超级进化" to null,
-            "普通Mega" to "",
-            "Mega X" to "X",
-            "Mega Y" to "Y",
-            "Mega Z" to "Z",
-        ).forEach { (label, suffix) ->
+        fun addRow(label: String, enabled: Boolean = true, onClick: () -> Unit) {
             panel.addView(
-                optionRow(label) { choose(suffix) },
+                optionRow(label) {}.apply {
+                    if (!enabled) {
+                        alpha = 0.45f
+                        isEnabled = false
+                        setOnClickListener(null)
+                    } else {
+                        setOnClickListener { onClick() }
+                    }
+                },
                 LinearLayout.LayoutParams(px(140), LinearLayout.LayoutParams.WRAP_CONTENT).apply {
                     bottomMargin = px(4)
                 },
             )
+        }
+
+        addRow("关闭超级进化") { choose(null) }
+        if (!opponentKnown) {
+            // 没读到对手（不在战斗画面 / OCR 读空）：退回通用列表，和改前行为一致。
+            listOf("普通Mega" to "", "Mega X" to "X", "Mega Y" to "Y", "Mega Z" to "Z")
+                .forEach { (label, suffix) -> addRow(label) { choose(suffix) } }
+        } else {
+            val options = runCatching { battleOverlayController.opponentMegaOptions() }
+                .getOrDefault(emptyList())
+            if (options.isEmpty()) {
+                addRow("这只没有超级进化", enabled = false) {}
+            } else {
+                options.forEach { mega ->
+                    addRow(battleOverlayController.megaOptionLabel(mega)) {
+                        choose(battleOverlayController.megaOptionSuffix(mega))
+                    }
+                }
+            }
         }
         popup = PopupWindow(panel, px(152), LinearLayout.LayoutParams.WRAP_CONTENT, true).apply {
             isOutsideTouchable = true
             elevation = 8f
             showAsDropDown(anchor, 0, px(4))
         }
+    }
+
+    /**
+     * 只读对手名牌（含性别徽章）的快速识别：两枚 Mega chip 共用同一次结果。
+     * 走 captureFrame 的互斥与画面冻结逻辑，但不建会话、不算伤害，成本只有一次 ROI OCR（约 0.2s）。
+     */
+    private fun readOpponentQuickly(onResult: (EntityValue?) -> Unit) {
+        captureFrame(
+            onCaptureStarted = { showStatusChip("正在读取对手…") },
+            onBusy = {
+                showStatusChip("上一次识别尚未结束，请稍候")
+                onResult(null)
+            },
+            onFailure = { message ->
+                publish(message)
+                onResult(null)
+            },
+        ) { frame, _ ->
+            val startedAt = System.currentTimeMillis()
+            val engine = paddleOcr
+            val nameText = if (engine == null || frame.width < SNAPSHOT_ROI_MIN_WIDTH) {
+                ""
+            } else {
+                val pixels = SNAPSHOT_REGIONS[0].pixelBounds(frame)
+                val rect = PaddleOcrEngine.RegionRect(
+                    left = pixels[0].toFloat() / frame.width,
+                    top = pixels[1].toFloat() / frame.height,
+                    right = pixels[2].toFloat() / frame.width,
+                    bottom = pixels[3].toFloat() / frame.height,
+                )
+                runCatching { engine.recognizeRegions(frame, listOf(rect)) }
+                    .getOrElse { error ->
+                        Log.e(LOG_TAG, "对手名牌快速识别失败", error)
+                        emptyList()
+                    }
+                    .firstOrNull()
+                    ?.let { cleanRegionText(it) }
+                    .orEmpty()
+            }
+            val gender = readGenderBadge(frame, SNAPSHOT_OPPONENT_GENDER_BADGE)
+            val species = if (nameText.isEmpty()) {
+                null
+            } else {
+                runCatching { resolveSpeciesName(nameText) }.getOrNull()
+                    ?.let { presetRepository.speciesWithGender(it, nameText + gender.orEmpty()) }
+            }
+            logRecognition(
+                "snapshot quick opp text='$nameText${gender.orEmpty()}'→${species?.displayName ?: "?"} " +
+                    "cost=${System.currentTimeMillis() - startedAt}ms",
+            )
+            mainHandler.post {
+                recycleOwnTeamFrame(frame)
+                if (destroyed) return@post
+                recognizing = false
+                frameTrackingEnabled = true
+                showAssistantEntry()
+                onResult(species)
+            }
+        }
+    }
+
+    /** 名字 → 正式名（先字面匹配，再用宝可梦词库纠正一字之差），供快速读名牌和整屏识别共用。 */
+    private fun resolveSpeciesName(text: String): EntityValue? {
+        val species = presetRepository.speciesCatalog
+        SnapshotNameMatcher.bestMatch(text, species, EntityValue::displayName, allowFragment = false)
+            ?.let { return it }
+        val official = runCatching { ocrVocabulary.correctToOfficialName(text, "species") }.getOrNull()
+            ?: return null
+        return species.firstOrNull { it.displayName == official }
+            ?: SnapshotNameMatcher.bestMatch(official, species, EntityValue::displayName, allowFragment = false)
     }
 
     /** 把 chip 的文案/底色刷成当前会话的 Mega 状态；没会话时是「默认关」的灰样子。 */
@@ -923,6 +1074,130 @@ class OverlayCaptureService : Service() {
         }
         apply(ownMegaChip, state.ownLabel, state.ownOn, state.ownAvailable)
         apply(opponentMegaChip, state.opponentLabel, state.opponentOn, state.opponentAvailable)
+    }
+
+    /** 能力等级 chip：0 显示成「+0」，非 0 高亮，和 MEGA chip 一样的配色规则。 */
+    private fun refreshStageChips() {
+        val density = overlayWindowContext.resources.displayMetrics.density
+        fun px(value: Int) = (value * density).toInt()
+        val state = runCatching { battleOverlayController.stageChips() }
+            .getOrElse { BattleOverlayController.StageChipState() }
+        fun apply(view: TextView?, prefix: String, stage: Int) {
+            view ?: return
+            view.text = prefix + if (stage > 0) "+$stage" else stage.toString()
+            val active = stage != 0
+            view.alpha = 1f
+            view.setTextColor(if (active) Color.WHITE else Color.rgb(206, 230, 216))
+            view.background = GradientDrawable().apply {
+                cornerRadius = px(9).toFloat()
+                if (active) {
+                    setColor(Color.argb(240, 196, 120, 20))
+                    setStroke(px(2), Color.argb(255, 255, 208, 96))
+                } else {
+                    setColor(Color.argb(190, 24, 42, 36))
+                    setStroke(px(1), Color.argb(130, 176, 214, 198))
+                }
+            }
+        }
+        apply(ownStageChip, "我", state.ownStage)
+        apply(opponentStageChip, "敌", state.opponentStage)
+    }
+
+    /**
+     * 点能力等级 chip 弹出 -6~+6 面板。只填一个数字：我方写进攻击+特攻、对手写进防御+特防，
+     * 引擎按这招是物攻还是特攻各取一项，所以不需要玩家再分「物/特」。
+     */
+    private fun onStageChip(own: Boolean) {
+        val anchor = (if (own) ownStageChip else opponentStageChip) ?: bubble ?: return
+        val density = overlayWindowContext.resources.displayMetrics.density
+        fun px(value: Int) = (value * density).toInt()
+        val current = runCatching { battleOverlayController.stageChips() }
+            .getOrElse { BattleOverlayController.StageChipState() }
+            .let { if (own) it.ownStage else it.opponentStage }
+
+        val panel = LinearLayout(overlayWindowContext).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(px(6), px(6), px(6), px(6))
+            background = GradientDrawable().apply {
+                cornerRadius = px(12).toFloat()
+                setColor(Color.argb(238, 24, 42, 36))
+                setStroke(px(1), Color.argb(150, 176, 214, 198))
+            }
+        }
+        fun optionRow(label: String, highlighted: Boolean, onClick: () -> Unit): TextView =
+            TextView(overlayWindowContext).apply {
+                text = label
+                textSize = 13f
+                gravity = Gravity.CENTER
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
+                includeFontPadding = false
+                setTextColor(Color.WHITE)
+                background = GradientDrawable().apply {
+                    cornerRadius = px(9).toFloat()
+                    if (highlighted) {
+                        setColor(Color.argb(240, 196, 120, 20))
+                        setStroke(px(2), Color.argb(255, 255, 208, 96))
+                    } else {
+                        setColor(Color.argb(210, 40, 66, 56))
+                    }
+                }
+                setPadding(px(8), px(7), px(8), px(7))
+                setOnClickListener { onClick() }
+            }
+
+        var popup: PopupWindow? = null
+        fun dismiss() {
+            popup?.dismiss()
+            popup = null
+        }
+        fun choose(value: Int) {
+            if (own) battleOverlayController.setOwnStatStage(value)
+            else battleOverlayController.setOpponentStatStage(value)
+            dismiss()
+            refreshStageChips()
+        }
+
+        panel.addView(optionRow(if (own) "我方能力等级（攻/特攻）" else "对方能力等级（防/特防）", false) { dismiss() })
+        // 上排减、下排加，同一数值上下对齐（-1 正上方是 +1），0 单独一行。
+        panel.addView(
+            optionRow("0（无变化）", current == 0) { choose(0) },
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            ).apply { bottomMargin = px(3) },
+        )
+        listOf(-1 downTo -6, 1..6).forEachIndexed { rowIndex, values ->
+            panel.addView(LinearLayout(overlayWindowContext).apply {
+                orientation = LinearLayout.HORIZONTAL
+                values.forEach { value ->
+                    addView(
+                        optionRow(if (value > 0) "+$value" else value.toString(), value == current) { choose(value) },
+                        LinearLayout.LayoutParams(px(40), LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+                            if (value != values.last()) rightMargin = px(3)
+                            if (rowIndex == 0) bottomMargin = px(3)
+                        },
+                    )
+                }
+            })
+        }
+        val panelWidth = px(6 * 40 + 5 * 3 + 12)
+        popup = PopupWindow(panel, panelWidth, LinearLayout.LayoutParams.WRAP_CONTENT, true).apply {
+            isOutsideTouchable = true
+            elevation = 8f
+            // chip 在最下方，弹窗往上展开，别被屏幕底边裁掉。
+            val location = IntArray(2)
+            anchor.getLocationOnScreen(location)
+            panel.measure(
+                View.MeasureSpec.makeMeasureSpec(panelWidth, View.MeasureSpec.EXACTLY),
+                View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED),
+            )
+            val height = panel.measuredHeight
+            val y = (location[1] - height - px(8)).coerceAtLeast(px(8))
+            // 单行 13 个按钮比较宽，贴着屏幕左/右边缘的 chip 要把弹窗横向拉回屏内。
+            val metrics = overlayWindowContext.resources.displayMetrics
+            val x = location[0].coerceIn(px(4), (metrics.widthPixels - panelWidth - px(4)).coerceAtLeast(px(4)))
+            showAtLocation(anchor, Gravity.NO_GRAVITY, x, y)
+        }
     }
 
     private fun showAssistantEntry(revealHiddenHud: Boolean = true) {
@@ -1297,21 +1572,16 @@ class OverlayCaptureService : Service() {
         }
     }
 
-    /** 两张队伍页面都识别完成后直接入库，不再弹命名窗口。 */
+    /** 两张队伍页面都识别完成后直接并进「我的宝可梦」，不再弹命名窗口。 */
     private fun autoSaveOwnTeam() {
         if (!importRepository.hasPendingTeam()) return
         val name = "对局录入 " + LocalDateTime.now().format(DateTimeFormatter.ofPattern("MM-dd HH:mm"))
         runCatching { importRepository.savePendingTeam(name) }
             .onSuccess { saved ->
                 CaptureUiState.teamLibraryRevision.value += 1
-                // 识别队伍识别的这 6 只，合并进「我的宝可梦」（重复的以这次识别为准）。
-                saved.savedJson?.optString("savedTeamId").orEmpty().takeIf { it.isNotEmpty() }?.let { id ->
-                    runCatching { TeamRepository.upsertTeamIntoMyPokemon(this@OverlayCaptureService, id) }
-                        .onFailure { Log.e(LOG_TAG, "Could not upsert my pokemon after team recognition", it) }
-                }
                 updateOwnTeamRecognitionState(OwnTeamRecognitionHudState())
                 showAssistantEntry()
-                publish("已自动记录我方队伍数值（$name）；${saved.message}")
+                publish(saved.message)
             }
             .onFailure { error ->
                 Log.e(LOG_TAG, "Could not auto-save recognized own team", error)
@@ -1332,18 +1602,13 @@ class OverlayCaptureService : Service() {
         val name = "对局录入 " + LocalDateTime.now().format(DateTimeFormatter.ofPattern("MM-dd HH:mm"))
         runCatching { importRepository.saveCurrentImportLenient(name) }
             .onSuccess { saved ->
-                val teamId = saved.savedJson?.optString("savedTeamId").orEmpty()
-                if (teamId.isNotEmpty()) {
-                    runCatching { repairTeamDefaults(teamId) }
-                        .onFailure { Log.e(LOG_TAG, "Could not complete saved team with defaults", it) }
-                    runCatching { TeamRepository.upsertTeamIntoMyPokemon(this@OverlayCaptureService, teamId) }
-                        .onFailure { Log.e(LOG_TAG, "Could not upsert my pokemon", it) }
-                }
+                runCatching { repairMyPokemonDefaults() }
+                    .onFailure { Log.e(LOG_TAG, "Could not complete my pokemon with defaults", it) }
                 CaptureUiState.ownTeamDraftRevision.value += 1
                 CaptureUiState.teamLibraryRevision.value += 1
                 updateOwnTeamRecognitionState(OwnTeamRecognitionHudState())
                 showAssistantEntry()
-                publish("已记录我方队伍（$name）；缺的招式/特性/能力值按图鉴默认补齐")
+                publish(saved.message)
             }
             .onFailure { error ->
                 Log.e(LOG_TAG, "Could not save own team leniently", error)
@@ -1361,18 +1626,13 @@ class OverlayCaptureService : Service() {
         val name = "状态页录入 " + LocalDateTime.now().format(DateTimeFormatter.ofPattern("MM-dd HH:mm"))
         runCatching { importRepository.saveStatsOnly(name) }
             .onSuccess { saved ->
-                val teamId = saved.savedJson?.optString("savedTeamId").orEmpty()
-                if (teamId.isNotEmpty()) {
-                    runCatching { repairTeamDefaults(teamId) }
-                        .onFailure { Log.e(LOG_TAG, "Could not complete stats-only team", it) }
-                    runCatching { TeamRepository.upsertTeamIntoMyPokemon(this@OverlayCaptureService, teamId) }
-                        .onFailure { Log.e(LOG_TAG, "Could not upsert my pokemon", it) }
-                }
+                runCatching { repairMyPokemonDefaults() }
+                    .onFailure { Log.e(LOG_TAG, "Could not complete stats-only my pokemon", it) }
                 CaptureUiState.ownTeamDraftRevision.value += 1
                 CaptureUiState.teamLibraryRevision.value += 1
                 updateOwnTeamRecognitionState(OwnTeamRecognitionHudState())
                 showAssistantEntry()
-                publish("已按状态页记录我方能力值并保存（$name），招式与特性用图鉴默认，可继续按画面计算")
+                publish(saved.message)
             }
             .onFailure { error ->
                 Log.e(LOG_TAG, "Could not save stats-only team", error)
@@ -1380,10 +1640,14 @@ class OverlayCaptureService : Service() {
             }
     }
 
-    /** 补齐队伍里每只宝可梦缺失的特性、招式和六项实际能力值。 */
-    private fun repairTeamDefaults(teamId: String) {
-        val team = TeamRepository.load(this).firstOrNull { it.id == teamId } ?: return
-        team.pokemon.forEachIndexed { index, config ->
+    /**
+     * 补齐「我的宝可梦」里每只缺失的特性、招式和六项实际能力值。
+     * 这里不再按“队伍文件 + teamId”去修，只有一份按物种 upsert 的列表。
+     */
+    private fun repairMyPokemonDefaults() {
+        val current = TeamRepository.loadMyPokemon(this)?.pokemon ?: return
+        var changed = false
+        val repaired = current.map { config ->
             val ability = config.ability ?: presetRepository.abilitiesFor(config.species).firstOrNull()
             val moves = if (config.moves.isEmpty()) {
                 presetRepository.learnableMovesFor(config.species)
@@ -1398,10 +1662,11 @@ class OverlayCaptureService : Service() {
                 presetRepository.statsFor(config.species, config.statPoints, config.statAlignment)
             }
             val fixed = config.copy(ability = ability, moves = moves, actualStats = actualStats)
-            if (fixed != config) {
-                TeamRepository.updatePokemon(this, teamId, index, fixed)
-            }
+            if (fixed != config) changed = true
+            fixed
         }
+        if (changed) runCatching { TeamRepository.upsertMyPokemon(this, repaired) }
+            .onFailure { Log.e(LOG_TAG, "Could not repair my pokemon defaults", it) }
     }
 
     /** 选招页一键计算：识别我方当前宝可梦、对手和四个招式，直接开 HUD 出三档结果。 */
@@ -1439,6 +1704,28 @@ class OverlayCaptureService : Service() {
                     matched = matchSnapshot(lines.filterNot { looksLikeHudText(it.text) })
                 }
             }
+            val iconRecognition = matched?.let { snapshot ->
+                runCatching {
+                    val ownIcon = cropSnapshotRegion(frame, SNAPSHOT_OWN_ICON)
+                    val opponentIcon = cropSnapshotRegion(frame, SNAPSHOT_OPPONENT_ICON)
+                    if (DEBUG_ICON_DIR) {
+                        ownIcon?.let { saveIconDebug(it, "own") }
+                        opponentIcon?.let { saveIconDebug(it, "opponent") }
+                    }
+                    val result = battleOverlayController.recognizeIcons(
+                        ownIcon,
+                        opponentIcon,
+                        snapshot.own,
+                        snapshot.opponent,
+                    )
+                    ownIcon?.recycle()
+                    opponentIcon?.recycle()
+                    result
+                }.onFailure { error ->
+                    Log.e(LOG_TAG, "头像形态识别失败", error)
+                }.getOrNull()
+            }
+            logRecognition(iconRecognition?.log ?: "头像形态识别：跳过")
             mainHandler.post {
                 recycleOwnTeamFrame(frame)
                 if (destroyed) return@post
@@ -1455,11 +1742,30 @@ class OverlayCaptureService : Service() {
                     matched.opponent,
                     matched.weather,
                     matched.terrain,
+                    iconRecognition,
                 )
                 refreshMegaChips()
+                refreshStageChips()
                 }
             }
         }
+    }
+
+    /** 按固定区域从当前帧里裁一块出来（形态识别用）。 */
+    private fun cropSnapshotRegion(frame: Bitmap, region: SnapshotRegion): Bitmap? = runCatching {
+        val bounds = region.pixelBounds(frame)
+        Bitmap.createBitmap(frame, bounds[0], bounds[1], bounds[2] - bounds[0], bounds[3] - bounds[1])
+    }.getOrNull()
+
+    /** 调试用：把裁下来的头像存一份，方便核对 ROI 有没有偏。 */
+    private fun saveIconDebug(bitmap: Bitmap, tag: String) {
+        runCatching {
+            val dir = java.io.File(filesDir, "debug-icons").apply { mkdirs() }
+            val stamp = java.text.SimpleDateFormat("MMdd-HHmmss", java.util.Locale.US).format(java.util.Date())
+            java.io.File(dir, "icon-$tag-$stamp.png").outputStream().use { out ->
+                bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
+            }
+        }.onFailure { Log.e(LOG_TAG, "保存头像调试图失败", it) }
     }
 
     private data class SnapshotMatch(

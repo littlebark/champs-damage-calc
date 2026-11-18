@@ -2,6 +2,7 @@ package com.bark.championsassistant
 
 import android.content.Context
 import android.content.res.ColorStateList
+import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.ColorFilter
@@ -91,7 +92,6 @@ internal class BattleOverlayController(
 
     private val density = context.resources.displayMetrics.density
     private val handler = Handler(Looper.getMainLooper())
-    private var setupView: View? = null
     private var panelView: View? = null
     private var conditionsView: View? = null
     private var opponentEditorView: View? = null
@@ -109,11 +109,14 @@ internal class BattleOverlayController(
     private val directDamageCache = object : LinkedHashMap<String, List<String>>(12, 0.75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, List<String>>?): Boolean = size > 12
     }
+    /** 坚盾剑怪补算（对方是盾/剑时另一种姿态的同一批招式），按请求 key 缓存。 */
+    private val directAlternateCache = object : LinkedHashMap<String, List<String>>(12, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, List<String>>?): Boolean = size > 12
+    }
     private var moveSortMode = MoveSortMode.PINYIN
     private var speedEditorSide = SpeedSide.OWN
     private var speedEditorSlot = 0
     private val panelNavigation = BattlePanelNavigation()
-    private val setupWindowState = OverlayWindowState()
     private val panelWindowState = OverlayWindowState()
     private val conditionsWindowState = OverlayWindowState()
     private val opponentEditorWindowState = OverlayWindowState()
@@ -137,7 +140,6 @@ internal class BattleOverlayController(
         )
     }
 
-    val hasPreview: Boolean get() = runCatching { sessionRepository.loadPreview() != null }.getOrDefault(false)
     val hasSession: Boolean get() = battleContextCache != null ||
         runCatching { sessionRepository.loadSession() != null }.getOrDefault(false)
 
@@ -147,6 +149,7 @@ internal class BattleOverlayController(
         battleContextCache = null
         panelDamageCache.clear()
         directDamageCache.clear()
+        directAlternateCache.clear()
         directOverlay.dismiss()
     }
 
@@ -160,6 +163,7 @@ internal class BattleOverlayController(
         battleContextCache = null
         panelDamageCache.clear()
         directDamageCache.clear()
+        directAlternateCache.clear()
         directOverlay.dismiss()
     }
 
@@ -231,6 +235,7 @@ internal class BattleOverlayController(
                 directCalculationGeneration++
                 panelDamageCache.clear()
                 directDamageCache.clear()
+                directAlternateCache.clear()
                 val isNew = existing == null
                 publish(
                     "已记录 ${recordSpecies.displayName} 的能力值" +
@@ -293,6 +298,7 @@ internal class BattleOverlayController(
                 directCalculationGeneration++
                 panelDamageCache.clear()
                 directDamageCache.clear()
+                directAlternateCache.clear()
                 publish("已记录 ${base.species.displayName} 的配招：${updated.moves.joinToString("／") { it.entity.displayName }}")
                 hideDirectHud()
             }
@@ -360,147 +366,6 @@ internal class BattleOverlayController(
         }
     }
 
-    fun showSetup() {
-        onTeamRecognitionStarted()
-        val preview = runCatching { sessionRepository.loadPreview() }.getOrElse {
-            Log.e("BattleOverlay", "Could not load team preview", it)
-            publish("无法读取双方阵容，请重新识别")
-            return
-        } ?: run {
-            publish("请先识别双方阵容")
-            return
-        }
-        var teams = runCatching { TeamRepository.load(context) }.getOrElse {
-            Log.e("BattleOverlay", "Could not load saved teams", it)
-            publish("无法读取我的队伍，请返回 App 后重试")
-            return
-        }.filter { it.pokemon.size == 6 }.map { team -> completeTeamDefaults(team) }
-        if (teams.isEmpty()) {
-            // 没录入队伍也不该挡住对局：按识别到的我方阵容生成一份默认队伍（0 加点、图鉴默认特性/招式）。
-            val fallback = buildDefaultOwnTeam(preview)
-            if (fallback == null) {
-                publish("识别不到我方阵容，请返回双方队伍预览页面重新识别")
-                return
-            }
-            teams = listOf(fallback)
-            publish("未找到已录入队伍，已按识别阵容生成默认队伍（0 加点），可继续对局")
-        }
-
-        dismissSetup()
-        dismissOpponentEditor(showPanel = false)
-        dismissSpeedLine(showPanel = false)
-        dismissPanel()
-        dismissSpeciesSearch(showPrevious = false)
-        onOverlayVisible(true)
-        val root = compactPanelRoot()
-        val params = rightRailPanelParams(setupWindowState, widthDp = 390)
-        val header = header("核对双方阵容", "确认后开始本局伤害计算") { dismissSetup() }
-        makeDraggable(header.getChildAt(0), root, params, setupWindowState)
-        root.addView(header)
-        val content = vertical(spacing = 12)
-        val teamLabel = label("选择本局使用的我方队伍")
-        content.addView(teamLabel)
-        val suggestedTeamIndex = teams.indices.maxByOrNull { matchCount(teams[it], preview) } ?: 0
-        val teamSpinner = spinner(teams.map { "${it.name} · 与识别阵容匹配 ${matchCount(it, preview)}/6" }, suggestedTeamIndex)
-        content.addView(teamSpinner)
-        val matchHint = bodyText("")
-        content.addView(matchHint)
-
-        val selectedOpponents = MutableList<EntityValue?>(6) { null }
-        content.addView(label("核对对手的 6 只宝可梦"))
-        content.addView(bodyText("如识别不准确，可点击“更正”并用中文名或英文名搜索。", color = TEXT_MUTED))
-        repeat(6) { rowIndex ->
-            val slot = preview.opponentSlots.firstOrNull { it.slotIndex == rowIndex }
-                ?: preview.opponentSlots.getOrNull(rowIndex)
-            val candidates = slot?.candidates.orEmpty().map { candidate ->
-                candidate.copy(entity = presetRepository.localizeSpecies(candidate.entity))
-            }.distinctBy { normalize(it.entity.showdownId) }
-            selectedOpponents[rowIndex] = candidates.firstOrNull()?.entity
-            val selectedText = bodyText(selectedOpponents[rowIndex]?.displayName ?: "未确认", bold = true)
-            val row = cardColumn().apply {
-                addView(horizontal(spacing = 8).apply {
-                    gravity = Gravity.CENTER_VERTICAL
-                    addView(bodyText("${rowIndex + 1}", bold = true), weighted(width = dp(30)))
-                    addView(selectedText, weighted(weight = 1f))
-                    addView(actionButton("更正", secondary = true) {
-                        showSpeciesSearch(
-                            title = "更正对手第 ${rowIndex + 1} 只宝可梦",
-                            current = selectedOpponents[rowIndex],
-                            suggestions = candidates.map(PreviewCandidate::entity),
-                        ) { selected ->
-                            selectedOpponents[rowIndex] = selected
-                            selectedText.text = selected.displayName
-                        }
-                    })
-                })
-                if (candidates.isNotEmpty()) {
-                    val picker = spinner(candidates.map { candidate ->
-                        "${candidate.entity.displayName} · 匹配度 ${(candidate.confidence * 100).roundToInt()}%"
-                    }, 0)
-                    picker.onItemSelected { position ->
-                        selectedOpponents[rowIndex] = candidates[position].entity
-                        selectedText.text = candidates[position].entity.displayName
-                    }
-                    addView(picker)
-                } else {
-                    addView(bodyText("未识别到候选，请搜索并选择正确的宝可梦。", color = ACCENT_AMBER))
-                }
-            }
-            content.addView(row)
-        }
-
-        fun updateMatchHint(position: Int) {
-            val count = matchCount(teams[position], preview)
-            matchHint.text = if (count == 6) {
-                "已与识别到的我方阵容完全匹配。"
-            } else {
-                "当前匹配 $count/6，请确认选择的是本局使用的队伍；伤害计算会使用该队伍保存的完整配置。"
-            }
-            matchHint.setTextColor(if (count >= 5) ACCENT_TEAL else ACCENT_AMBER)
-        }
-        updateMatchHint(suggestedTeamIndex)
-        teamSpinner.onItemSelected(::updateMatchHint)
-
-        content.addView(bodyText("队伍预览无法确定对手的招式、特性和能力值，开始对局后可按实际情况选择。", color = TEXT_MUTED))
-        content.addView(horizontal(spacing = 10).apply {
-            gravity = Gravity.END
-            addView(actionButton("重新识别阵容", secondary = true) {
-                dismissSetup()
-                publish("请回到双方队伍预览页面，再点击悬浮按钮选择“识别双方阵容”")
-            })
-            addView(actionButton("确认并开始对局") {
-                val opponents = selectedOpponents.filterNotNull()
-                if (opponents.size != 6) {
-                    publish("请确认对手的全部 6 只宝可梦")
-                    return@actionButton
-                }
-                runCatching {
-                    sessionRepository.createSession(preview, teams[teamSpinner.selectedItemPosition].id, opponents)
-                }.onSuccess {
-                    battleContextCache = null
-                    panelDamageCache.clear()
-                    directDamageCache.clear()
-                    dismissSetup(showBubble = false)
-                    onOverlayVisible(false)
-                    if (shouldAutoOpenDirectHud()) {
-                        publish("本局阵容已确认，已打开属性相性")
-                        showDirectHud()
-                    } else {
-                        publish("本局阵容已确认；可从悬浮按钮打开 HUD 或详细面板")
-                    }
-                }.onFailure {
-                    Log.e("BattleOverlay", "Could not create battle session", it)
-                    publish("无法开始对局，请重试")
-                }
-            })
-        })
-
-        root.addView(scroll(content), LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
-        root.addView(resizeHandle(root, params, setupWindowState))
-        addOverlay(root, params)
-        setupView = root
-    }
-
     fun showPanel() {
         directCalculationGeneration++
         directOverlay.dismiss()
@@ -511,7 +376,7 @@ internal class BattleOverlayController(
             publish("无法读取当前对局，请重新核对双方阵容")
             return
         } ?: run {
-            if (hasPreview) showSetup() else publish("请先识别并确认双方阵容")
+            publish("还没有对局数据，先在选招页点「计算伤害」")
             return
         }
         val teams = cached?.teams ?: runCatching { TeamRepository.load(context) }.getOrElse {
@@ -624,6 +489,12 @@ internal class BattleOverlayController(
             typeMatchups = typeMatchups,
             ownChangeOptions = ownChangeOptions,
             opponentChangeOptions = opponentChangeOptions,
+            // 伤害框上方的标题框：这一算到底是「谁 对 谁」，Mega/形态已按实际套用后的名字显示。
+            matchTitle = run {
+                val ownName = ownNames.getOrNull(state.ownSlot).orEmpty()
+                val opponentName = opponentNames.getOrNull(state.opponentSlot).orEmpty()
+                if (ownName.isBlank() || opponentName.isBlank()) "" else "$ownName 对 $opponentName"
+            },
         )
         directOverlay.show(model)
         onOverlayVisible(true)
@@ -636,7 +507,7 @@ internal class BattleOverlayController(
         onOverlayVisible(false)
     }
 
-    /** 悬浮十字键上方两枚 Mega 开关的文案与状态。 */
+    /** 悬浮十字键上方两枚 Mega 开关的文案与状态（形态不再占 chip，由头像识别决定）。 */
     data class MegaChipState(
         val ownLabel: String = "我方MEGA",
         val ownOn: Boolean = false,
@@ -664,10 +535,11 @@ internal class BattleOverlayController(
         val state = directContext.session.calculation
         val ownBase = ownBaseSpecies(directContext, state)
         return MegaChipState(
-            ownLabel = ownChipLabel(ownBase, state),
-            ownOn = state.ownMega,
+            // 点了只记状态：chip 高亮完全跟随 pending，算完即灭，不再或上会话里的历史状态。
+            ownLabel = if (pendingOwnMega()) ownChipLabel(ownBase, state) else "我方MEGA",
+            ownOn = pendingOwnMega(),
             // 我方也不再置灰：换人后没重新识别时这里只是旧物种，灰掉会误伤玩家。
-            // 真点了而当前这只没有 Mega，toggleOwnMega 会静默按不 mega 算。
+            // 真点了而当前这只没有 Mega，计算伤害时会静默按不 mega 算。
             ownAvailable = true,
             // 对手永远可点：可能已经换人、也可能我们看错了，不能因为当前这只没有 Mega 就锁死。
             opponentLabel = if (state.opponentMega) {
@@ -758,80 +630,178 @@ internal class BattleOverlayController(
         }
     }
 
+    /** 悬浮层最下方两枚「能力等级」开关：我方出招那一项、对方承受那一项，默认都是 0。 */
+    data class StageChipState(
+        val ownStage: Int = 0,
+        val opponentStage: Int = 0,
+    )
+
+    fun stageChips(): StageChipState = StageChipState(
+        // 和我方 Mega 一样：chip 上只记「这次要按几阶算」，真正的代入在「计算伤害」，
+        // 算完就归零，下一回合重新开始，不会再从上一局的文件里捞出个 -2。
+        ownStage = pendingStage(own = true),
+        opponentStage = pendingStage(own = false),
+    )
+
+    private fun pendingStage(own: Boolean): Int =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getInt(if (own) KEY_OWN_STAGE else KEY_OPPONENT_STAGE, 0)
+
+    private fun storePendingStage(own: Boolean, value: Int) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+            .putInt(if (own) KEY_OWN_STAGE else KEY_OPPONENT_STAGE, value)
+            .apply()
+    }
+
+    fun adjustOwnStatStage(delta: Int) = adjustStatStage(own = true, delta = delta, absolute = null)
+
+    fun adjustOpponentStatStage(delta: Int) = adjustStatStage(own = false, delta = delta, absolute = null)
+
+    fun setOwnStatStage(value: Int) = adjustStatStage(own = true, delta = 0, absolute = value)
+
+    fun setOpponentStatStage(value: Int) = adjustStatStage(own = false, delta = 0, absolute = value)
+
+    fun clearStatStages() {
+        storePendingStage(own = true, 0)
+        storePendingStage(own = false, 0)
+    }
+
     /**
-     * 我方 Mega 只有一个开关：开的时候按持有物自动选形态（喷火龙 X/Y 靠进化石区分），关掉就回到基础形态。
-     * 只改形态覆盖，不动物种记录；改完直接用已有识别结果重算一次（不重新截屏）。
+     * 能力等级只有一个数字：我方写进攻击+特攻，对手写进防御+特防。
+     * 引擎按招式物/特自动各取一项，所以一个 -6~+6 就能覆盖「剑舞」「铁壁」这类强化。
+     */
+    private fun adjustStatStage(own: Boolean, delta: Int, absolute: Int?) {
+        val current = pendingStage(own)
+        val next = (absolute ?: (current + delta)).coerceIn(-6, 6)
+        if (next == current) return
+        storePendingStage(own, next)
+    }
+
+    /**
+     * 我方 Mega 只有一个开关：和对手那两颗一样只表示「状态」，点了不重算、不报任何物种文案，
+     * 真正的套用在「计算伤害」时按那次识别到的我方宝可梦 + 持有物决定（喷火龙 X/Y 靠进化石区分）。
      */
     fun toggleOwnMega() {
-        val directContext = loadDirectHudContext() ?: return
-        val session = directContext.session
+        storePendingOwnMega(!pendingOwnMega())
+    }
+
+    fun pendingOwnMega(): Boolean =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getBoolean(KEY_OWN_MEGA, false)
+
+    private fun storePendingOwnMega(value: Boolean) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+            .putBoolean(KEY_OWN_MEGA, value)
+            .apply()
+    }
+
+    /**
+     * 助手每次启动都当作新一轮对局：清掉上一局残留的 chip 状态（我方MEGA / 对方MEGA / 能力等级），
+     * 同时把会话里已经套用过的 Mega 标记一并复位，免得一打开 App 就亮着、数字也按旧 Mega 算。
+     */
+    fun resetPendingBattleIntents() {
+        storePendingOwnMega(false)
+        storePendingStage(own = true, 0)
+        storePendingStage(own = false, 0)
+        storePendingOpponentMegaSuffix(null)
+        val session = runCatching { sessionRepository.loadSession() }.getOrNull() ?: return
         val state = session.calculation
-        val base = ownBaseSpecies(directContext, state) ?: return
-        val options = presetRepository.megaFormsFor(base)
-        if (options.isEmpty()) {
-            // 没有 Mega 形态或对不上：不提示、不弹窗，就当没点，按不 mega 计算。
-            val cleared = state.copy(
-                ownMega = false,
-                ownMegaFormId = null,
-                ownFormOverrides = state.ownFormOverrides - state.ownSlot,
-            )
-            if (state.ownMega) applyMegaChange(directContext, cleared, "") else Unit
-            return
-        }
-        val picked = if (state.ownMega) {
-            null
-        } else {
-            presetRepository.pickMegaFormForOwn(base, ownPokemonItem(state))
-        }
-        val newState = state.copy(
-            ownMega = picked != null,
-            ownMegaFormId = picked?.showdownId,
-            ownFormOverrides = if (picked == null) {
-                state.ownFormOverrides - state.ownSlot
-            } else {
-                state.ownFormOverrides + (state.ownSlot to picked)
-            },
+        if (!state.ownMega && !state.opponentMega) return
+        val cleared = state.copy(
+            ownMega = false,
+            ownMegaFormId = null,
+            opponentMega = false,
+            opponentMegaFormId = null,
+            opponentMegaSuffix = null,
         )
-        applyMegaChange(directContext, newState, if (picked == null) "我方超级进化已关闭" else "我方按 ${picked.displayName} 计算")
+        runCatching { saveSession(session.copy(calculation = cleared)) }
+        battleContextCache = null
     }
 
     /**
      * 对手：玩家只知道「他用了普通 Mega / X / Y / Z」，道具和形态都猜不到。
      * suffix 为 null = 关闭；"" = 普通 Mega；"X"/"Y"/"Z" = 对应形态。
-     * 还没识别到对手时先存成「本局意向」，等计算伤害读到宝可梦后再匹配（见 startSnapshotSession）。
+     *
+     * 这颗 chip 只是「状态」，点它既不重算也不提示，更不拿会话里那只有可能是上一局的对手去匹配，
+     * 因为点 chip 的瞬间屏幕上是哪只宝可梦根本不知道。唯一套用时机是「计算伤害」：
+     * 那里用这次识别到的对手去匹配，匹配得上就正常算，匹配不上才提示按哪只算。
      */
     fun setOpponentMegaSuffix(suffix: String?) {
-        // 先记成「下一次计算用哪类」，这样先点 Mega 再点计算、或者点完计算立刻切形态都成立。
-        // 下一次「计算伤害」消费后就会清掉，不会无限沿用。
         storePendingOpponentMegaSuffix(suffix)
-        val directContext = loadDirectHudContext()
-        if (directContext == null) {
-            if (suffix != null) publish("对方按 ${opponentChipLabel(suffix)} 记下，识别到宝可梦后再套用")
-            return
-        }
+        // 清掉上一轮已经套用过的形态，避免 chip 一边显示新选、数字还是旧形态算的。
+        val directContext = loadDirectHudContext() ?: return
+        val state = directContext.session.calculation
+        if (!state.opponentMega && state.opponentFormOverrides[state.opponentSlot] == null) return
+        val cleared = state.copy(
+            opponentMega = false,
+            opponentMegaFormId = null,
+            opponentMegaSuffix = null,
+            opponentFormOverrides = state.opponentFormOverrides - state.opponentSlot,
+        )
+        val changed = directContext.session.copy(calculation = cleared)
+        saveSession(changed)
+        battleContextCache = directContext.copy(session = changed)
+        directDamageCache.clear()
+        directAlternateCache.clear()
+        directCalculationGeneration++
+    }
+
+    /**
+     * 对手形态不再单独占 chip：形态由「计算伤害」前的头像识别决定（坚盾剑怪另有双行补算）。
+     * 这里只保留 Mega 的意向。formId 为 null 表示回到基础形态。
+     */
+
+    /** 当前对手这一只能变成哪些 Mega 形态（空 = 这只不能 Mega）。 */
+    fun opponentMegaOptions(): List<EntityValue> {
+        val directContext = loadDirectHudContext() ?: return emptyList()
+        val state = directContext.session.calculation
+        val base = opponentBaseSpecies(directContext.session, state) ?: return emptyList()
+        return presetRepository.megaFormsFor(base).map(presetRepository::localizeSpecies)
+    }
+
+    /** Mega 菜单文案：普通 Mega / Mega X / Mega Y / Mega Z（性别拆分的写雌/雄）。 */
+    fun megaOptionLabel(mega: EntityValue): String = when (val suffix = megaSuffix(mega)) {
+        "X", "Y", "Z" -> "Mega $suffix"
+        "雌" -> "Mega（雌）"
+        "雄" -> "Mega（雄）"
+        else -> "普通 Mega"
+    }
+
+    /**
+     * 这个 Mega 形态对应的 chip 后缀，和 [setOpponentMegaSuffix] 的参数一致。
+     * 必须用数据层的后缀定义（普通 Mega = ""，含性别拆分的那两只也是 ""），
+     * 否则按「雌/雄」传下去会匹配不到形态。
+     */
+    fun megaOptionSuffix(mega: EntityValue): String =
+        presetRepository.megaFormSuffix(mega.showdownId)
+
+    /**
+     * 点 chip 时快速读到对手名牌之后，把会话里的对手换成屏幕上这只。
+     * 只更新身份、套用状态一并清掉，不给伤害数字，等玩家按「计算伤害」再算。
+     */
+    fun updateOpponentIdentity(species: EntityValue) {
+        val directContext = loadDirectHudContext() ?: return
+        val localized = presetRepository.localizeSpecies(species)
         val session = directContext.session
         val state = session.calculation
-        val base = opponentBaseSpecies(session, state)
-        val picked = base?.let { presetRepository.pickMegaFormForSuffix(it, suffix) }
-        // 匹配不到（这只没有这类 Mega）就静默按不 mega 算，不弹提示。
-        // 「待套用」的意向要留着：点 chip 时常常还没识别到对手，chip 显示成已选是预期行为，
-        // 真正能不能套上由这一次识别到的物种决定。
-        val effective = if (suffix == null) null else picked
-        val newState = state.copy(
-            opponentMega = effective != null,
-            opponentMegaFormId = effective?.showdownId,
-            opponentMegaSuffix = if (effective == null) null else suffix,
-            opponentFormOverrides = if (effective == null) {
-                state.opponentFormOverrides - state.opponentSlot
-            } else {
-                state.opponentFormOverrides + (state.opponentSlot to effective)
-            },
+        if (session.opponentTeam.isEmpty()) return
+        val slot = state.opponentSlot.coerceIn(0, session.opponentTeam.lastIndex)
+        val current = session.opponentTeam.getOrNull(slot)
+        if (current != null && sameSpecies(current, localized)) return
+        val nextTeam = session.opponentTeam.toMutableList().apply { set(slot, localized) }
+        // 换了一只，上一只套用的 Mega/形态覆盖必须清掉，否则下次计算会按旧形态算。
+        val cleared = state.copy(
+            opponentMega = false,
+            opponentMegaFormId = null,
+            opponentMegaSuffix = null,
+            opponentFormOverrides = state.opponentFormOverrides - slot,
         )
-        applyMegaChange(
-            directContext,
-            newState,
-            if (effective == null) "" else "对方按 ${effective.displayName} 计算",
-        )
+        val changed = session.copy(opponentTeam = nextTeam, calculation = cleared)
+        saveSession(changed)
+        battleContextCache = directContext.copy(session = changed)
+        directDamageCache.clear()
+        directAlternateCache.clear()
+        directCalculationGeneration++
     }
 
     private fun applyMegaChange(directContext: BattleContext, newState: BattleCalculationState, message: String) {
@@ -840,6 +810,7 @@ internal class BattleOverlayController(
         val updated = directContext.copy(session = changed)
         battleContextCache = updated
         directDamageCache.clear()
+        directAlternateCache.clear()
         directCalculationGeneration++
         if (message.isNotBlank()) publish(message)
         if (directOverlay.isVisible) showDirectHud(updated)
@@ -860,6 +831,44 @@ internal class BattleOverlayController(
     }
 
     /**
+     * 头像识别结果：识别出来的形态（识别不出就是 null）+ 一行给日志看的分数。
+     */
+    data class IconRecognition(
+        val ownForm: EntityValue?,
+        val opponentForm: EntityValue?,
+        val log: String,
+    )
+
+    private val spriteRecognition by lazy { SpriteRecognition(context) }
+
+    /**
+     * 从「计算伤害」页的两块名牌头像里识别形态（Mega / 地区形态 / 异色）。
+     * 候选只取当前物种的家族，识别不出或分差不够就返回 null（调用方按基础形态算）。
+     */
+    fun recognizeIcons(
+        ownIcon: Bitmap?,
+        opponentIcon: Bitmap?,
+        own: EntityValue,
+        opponent: EntityValue,
+    ): IconRecognition {
+        val ownCandidates = presetRepository.formsFor(own).map { it.species.showdownId }
+        val opponentCandidates = presetRepository.formsFor(opponent).map { it.species.showdownId }
+        val ownMatch = runCatching {
+            ownIcon?.let { spriteRecognition.recognize(it, ownCandidates) }
+        }.onFailure { Log.e("BattleOverlay", "我方头像形态识别失败", it) }.getOrNull()
+        val opponentMatch = runCatching {
+            opponentIcon?.let { spriteRecognition.recognize(it, opponentCandidates) }
+        }.onFailure { Log.e("BattleOverlay", "对方头像形态识别失败", it) }.getOrNull()
+        val ownForm = ownMatch?.takeIf { it.applied }?.let { presetRepository.speciesForShowdownId(it.showdownId) }
+        val opponentForm = opponentMatch?.takeIf { it.applied }
+            ?.let { presetRepository.speciesForShowdownId(it.showdownId) }
+        val log = "头像形态识别 我方[${spriteRecognition.describe(ownMatch)}] " +
+            "对方[${spriteRecognition.describe(opponentMatch)}] " +
+            "候选数 我方=${ownCandidates.size} 对方=${opponentCandidates.size}"
+        return IconRecognition(ownForm, opponentForm, log)
+    }
+
+    /**
      * 选招页一键计算：只用画面识别到的我方当前宝可梦、四个招式和对手，直接开 HUD，不需要先确认阵容。
      */
     fun startSnapshotSession(
@@ -868,29 +877,49 @@ internal class BattleOverlayController(
         opponent: EntityValue,
         weather: String = "NONE",
         terrain: String = "NONE",
+        recognized: IconRecognition? = null,
     ) {
         val localizedOwn = presetRepository.localizeSpecies(ownSpecies)
         val localizedOpponent = presetRepository.localizeSpecies(opponent)
-        // chip 勾选状态跨回合保留；Mega 形态按这次识别到的物种重新解析（换了一只就按新的物种找）。
-        val previous = runCatching { sessionRepository.loadSession() }.getOrNull()?.calculation
-        val ownMegaForm = previous?.takeIf { it.ownMega }?.let {
-            // 我方形态按记忆里的持有物决定（喷火龙吃「喷火龙进化石X」就是 X），没道具才取第一个。
-            val recordedItem = runCatching { TeamRepository.loadMyPokemon(context) }.getOrNull()
-                ?.pokemon?.firstOrNull { pokemon -> sameSpecies(pokemon.species, localizedOwn) }?.item
-            presetRepository.pickMegaFormForOwn(localizedOwn, recordedItem)?.let(presetRepository::localizeSpecies)
+        // 三颗 chip 都只是「状态」：这里一次性读取，套用到这次识别到的双方身上，读完就清空。
+        // 我方 Mega 按记忆里的持有物决定形态（喷火龙吃「喷火龙进化石X」就是 X），没道具才取第一个；
+        // 这只没有 Mega 或对不上就静默按不 mega 算，不提示。
+        val ownMegaWanted = pendingOwnMega()
+        // 图像识别出来的形态只当「默认值」：玩家点了 chip 就以玩家为准（那是本回合要进化、画面还没变的判断）。
+        val ownMegaOptions = presetRepository.megaFormsFor(localizedOwn).map(presetRepository::localizeSpecies)
+        val ownMegaForm = when {
+            ownMegaWanted -> {
+                val recordedItem = runCatching { TeamRepository.loadMyPokemon(context) }.getOrNull()
+                    ?.pokemon?.firstOrNull { pokemon -> sameSpecies(pokemon.species, localizedOwn) }?.item
+                presetRepository.pickMegaFormForOwn(localizedOwn, recordedItem)?.let(presetRepository::localizeSpecies)
+            }
+            recognized?.ownForm != null ->
+                ownMegaOptions.firstOrNull { sameSpecies(it, recognized.ownForm) }
+            else -> null
         }
         // 玩家可能先点了「对方MEGA」再点计算：这时只知道类别（普通/X/Y/Z），用后缀去识别到的家族里匹配；
         // 匹配不到（这只没有这类形态）就静默按不 mega 算。
         // 注意：每次点计算都重新开始，不沿用上一回合选的类别——对手可能已经换人，旧选择会套错对象。
         val pendingSuffix = pendingOpponentMegaSuffix()
         val opponentSuffix = pendingSuffix
-        val opponentMegaForm = if (opponentSuffix != null) {
-            presetRepository.pickMegaFormForSuffix(localizedOpponent, opponentSuffix)
+        val opponentMegaOptions = presetRepository.megaFormsFor(localizedOpponent).map(presetRepository::localizeSpecies)
+        val opponentMegaForm = when {
+            opponentSuffix != null -> presetRepository.pickMegaFormForSuffix(localizedOpponent, opponentSuffix)
                 ?.let(presetRepository::localizeSpecies)
-        } else {
-            null
+            recognized?.opponentForm != null ->
+                opponentMegaOptions.firstOrNull { sameSpecies(it, recognized.opponentForm) }
+            else -> null
         }
         if (pendingSuffix != null) storePendingOpponentMegaSuffix(null)
+        // 形态不再由 chip 指定：一律按这次头像识别到的形态匹配，识别不到就按基础形态算。
+        val switchableForms = presetRepository.switchableFormsFor(localizedOpponent)
+        val pickedForm = when {
+            recognized?.opponentForm != null -> switchableForms
+                .firstOrNull { sameSpecies(it.species, recognized.opponentForm) }
+                ?.species
+                ?.let(presetRepository::localizeSpecies)
+            else -> null
+        }
         val ownMegaOn = ownMegaForm != null
         val opponentMegaOn = opponentMegaForm != null
         val containingMoves = moves.take(4).ifEmpty {
@@ -919,6 +948,10 @@ internal class BattleOverlayController(
         val slot = team.pokemon.indexOfFirst {
             sameSpecies(it.species, localizedOwn)
         }.coerceAtLeast(0)
+        // 能力等级也是玩家的判断（OCR 读不出「几阶」）：chip 上点了什么，就在这一次计算里代入，
+        // 代入完立刻归零——下一回合重新开始，不会再从上一局的文件里捞出个 -2 来。
+        val pendingOwnStage = pendingStage(own = true)
+        val pendingOpponentStage = pendingStage(own = false)
         val session = BattleSession(
             sessionId = "battle-${System.currentTimeMillis()}",
             createdAt = java.time.Instant.now().toString(),
@@ -936,11 +969,30 @@ internal class BattleOverlayController(
                 // Mega 是玩家的判断（名字 Mega 后也不变，OCR 读不出来），所以沿用上一轮 chip 的勾选。
                 ownMega = ownMegaOn,
                 opponentMega = opponentMegaOn,
-                ownMegaFormId = ownMegaForm?.showdownId ?: previous?.ownMegaFormId,
+                ownMegaFormId = ownMegaForm?.showdownId,
                 opponentMegaFormId = opponentMegaForm?.showdownId,
                 opponentMegaSuffix = if (opponentMegaForm != null) opponentSuffix else null,
                 ownFormOverrides = ownMegaForm?.let { mapOf(slot to it) }.orEmpty(),
-                opponentFormOverrides = opponentMegaForm?.let { mapOf(0 to it) }.orEmpty(),
+                // Mega 与形态互斥：两个 chip 同时勾着时 Mega 优先（Mega 改的是基础物种本身）。
+                opponentFormOverrides = when {
+                    opponentMegaForm != null -> mapOf(0 to opponentMegaForm)
+                    pickedForm != null -> mapOf(0 to pickedForm)
+                    else -> emptyMap()
+                },
+                ownConditions = if (pendingOwnStage != 0) {
+                    mapOf(slot to BattlePokemonCondition(
+                        stages = BattleStatStages(atk = pendingOwnStage, spa = pendingOwnStage),
+                    ))
+                } else {
+                    emptyMap()
+                },
+                opponentConditions = if (pendingOpponentStage != 0) {
+                    mapOf(0 to BattlePokemonCondition(
+                        stages = BattleStatStages(def = pendingOpponentStage, spd = pendingOpponentStage),
+                    ))
+                } else {
+                    emptyMap()
+                },
                 // 快照流程就是「按当前画面算伤害」，必须一进来就是计算模式，
                 // 否则 HUD 只会摆空红框，数字永远不排下去。
                 directHud = BattleDirectHudState(mode = BattleDirectHudMode.CALCULATION),
@@ -952,9 +1004,56 @@ internal class BattleOverlayController(
             return
         }
         battleContextCache = null
+        // 代进去就清空：下一回合 chip 从 0 重新点，不会变成「默认 -2」。
+        storePendingStage(own = true, 0)
+        storePendingStage(own = false, 0)
+        // 我方 Mega 也一样：这一算已经决定要不要 Mega 了，chip 立即归零，下一回合要 Mega 得重新点。
+        storePendingOwnMega(false)
         // 伤害缓存保留：相同阵容组合下一回合直接命中。
-        publish("按当前画面计算：${localizedOwn.displayName} 对 ${localizedOpponent.displayName}")
+        // 玩家点过对方 Mega、但这只没有对应形态时，唯一提示一次「实际按谁算」；匹配得上就正常算、不提示。
+        if (pendingSuffix != null && opponentMegaForm == null) {
+            publish("对手没有 ${opponentChipLabel(pendingSuffix)} 形态，按 ${localizedOpponent.displayName}（不 Mega）计算")
+        } else {
+            val opponentLabelText = (pickedForm ?: opponentMegaForm)?.displayName ?: localizedOpponent.displayName
+            publish("按当前画面计算：${localizedOwn.displayName} 对 $opponentLabelText")
+        }
         showDirectHud()
+    }
+
+    /**
+     * 攻击方是坚盾剑怪（盾 / Both）时换成剑形态的配置：出招会先切剑再结算。
+     * 本来就是剑、或者不是坚盾剑怪时返回 null。
+     */
+    private fun aegislashAttackConfig(own: PokemonConfig): PokemonConfig? {
+        val key = normalizeShowdownId(own.species.showdownId)
+        if (key != AEGISLASH_SHIELD_ID && key != "aegislashboth") return null
+        val blade = presetRepository.speciesForShowdownId("Aegislash-Blade") ?: return null
+        return presetRepository.effectiveOwnPokemon(own, blade)
+    }
+
+    /** 防守方是坚盾剑怪时另一种姿态（盾→剑 / 剑→盾）；Both 不参与。 */
+    private fun aegislashOtherStance(species: EntityValue): Pair<EntityValue, String>? =
+        when (normalizeShowdownId(species.showdownId)) {
+            AEGISLASH_SHIELD_ID -> presetRepository.speciesForShowdownId("Aegislash-Blade")?.let { it to "剑" }
+            AEGISLASH_BLADE_ID -> presetRepository.speciesForShowdownId("Aegislash-Shield")?.let { it to "盾" }
+            else -> null
+        }
+
+    /** 对方是坚盾剑怪：按另一种姿态再准备一份同样的请求，用来补算那一行。 */
+    private fun prepareAlternateStanceDamage(
+        session: BattleSession,
+        ownTeam: SavedTeam,
+    ): Pair<PreparedDirectDamage, String>? {
+        val state = session.calculation
+        val current = state.opponentFormOverrides[state.opponentSlot] ?: session.opponentTeam[state.opponentSlot]
+        val (other, label) = aegislashOtherStance(current) ?: return null
+        val altState = state.copy(
+            opponentFormOverrides = state.opponentFormOverrides + (state.opponentSlot to other),
+            // 坚盾剑怪没有 Mega，保险把对方 Mega 关掉，避免覆盖成别的形态。
+            opponentMega = false,
+            opponentMegaFormId = null,
+        )
+        return prepareDirectDamage(session.copy(calculation = altState), ownTeam) to label
     }
 
     private fun normalizeSpecies(value: String): String =
@@ -1022,6 +1121,7 @@ internal class BattleOverlayController(
         battleContextCache = null
         panelDamageCache.clear()
         directDamageCache.clear()
+        directAlternateCache.clear()
         publish("快速对局已开始：我方 ${team.name}，对手 ${localized.displayName}（对方按三档估算）")
         showDirectHud()
     }
@@ -1371,11 +1471,18 @@ internal class BattleOverlayController(
         singleMoveId: String? = null,
     ): PreparedDirectDamage {
         val state = session.calculation
-        val own = presetRepository.effectiveOwnPokemon(
-            ownTeam.pokemon[state.ownSlot],
-            state.ownFormOverrides[state.ownSlot],
-        )
-        val configuredMoves = actualConfiguredMoves(own.moves)
+        val baseOwn = ownTeam.pokemon[state.ownSlot]
+        val own = presetRepository.effectiveOwnPokemon(baseOwn, state.ownFormOverrides[state.ownSlot])
+        // 坚盾剑怪：队伍识别 / 单只识别读到的都是「盾」的数值（图鉴与状态页显示的也是盾），
+        // 但它出招时会先切剑再结算，所以攻击方一律换成剑形态的数值（照原加点与性格等比换算）。
+        val attackOwn = aegislashAttackConfig(own)
+        val attackTeam = if (attackOwn != null) {
+            ownTeam.copy(pokemon = ownTeam.pokemon.toMutableList().also { it[state.ownSlot] = attackOwn })
+        } else {
+            ownTeam
+        }
+        val attackState = if (attackOwn != null) state.copy(ownFormOverrides = state.ownFormOverrides - state.ownSlot) else state
+        val configuredMoves = actualConfiguredMoves((attackOwn ?: own).moves)
         val opponent = state.opponentFormOverrides[state.opponentSlot] ?: session.opponentTeam[state.opponentSlot]
         val profiles = presetRepository.profilesFor(opponent)
         val basePreset = profiles.firstOrNull { it.profileId == state.selectedPresetId } ?: profiles.first()
@@ -1384,13 +1491,13 @@ internal class BattleOverlayController(
             basePreset,
             state.opponentManualOverrides[state.opponentSlot],
         )
-        val directSession = session.copy(calculation = state.copy(
+        val directSession = session.copy(calculation = attackState.copy(
             direction = "OWN_TO_OPPONENT",
             selectedMoveId = singleMoveId,
         ))
         val request = buildBattleDamageRequest(
             directSession,
-            ownTeam,
+            attackTeam,
             preset,
             emptyList(),
             presetRepository,
@@ -1433,12 +1540,15 @@ internal class BattleOverlayController(
             directOverlay.updateDamage(List(4) { "" })
             return
         }
+        // 每次重新算都先清掉上一轮的坚盾剑怪补算行，避免换人后还挂着旧姿态的数字。
+        if (retry == 0) directOverlay.updateDamageAlternate(emptyList(), "")
         directDamageCache[prepared.cacheKey]?.let { cached ->
             Log.i(
                 "BattleOverlay",
                 "Direct HUD damage (cache) key=${prepared.cacheKey} moves=${prepared.configuredMoves.map { it.entity.displayName }} values=$cached",
             )
             directOverlay.updateDamage(cached)
+            fillAlternateStanceDamage(session, ownTeam, generation)
             return
         }
 
@@ -1456,6 +1566,7 @@ internal class BattleOverlayController(
                                         "moves=${prepared.configuredMoves.map { it.entity.displayName }} values=$values",
                                 )
                                 directOverlay.updateDamage(values)
+                                fillAlternateStanceDamage(session, ownTeam, generation)
                                 fillMissingDirectDamage(session, ownTeam, prepared, values, generation)
                             }
                             .onFailure {
@@ -1470,6 +1581,41 @@ internal class BattleOverlayController(
                 )
             }
         }, if (retry == 0) 100 else 0)
+    }
+
+    /**
+     * 坚盾剑怪作为防守方时，补算另一种姿态的同一批招式，显示在每个伤害框的第二行。
+     * 不是坚盾剑怪就直接跳过（不占任何时间）。
+     */
+    private fun fillAlternateStanceDamage(
+        session: BattleSession,
+        ownTeam: SavedTeam,
+        generation: Int,
+    ) {
+        if (!runtime.isReady) return
+        val alternate = runCatching { prepareAlternateStanceDamage(session, ownTeam) }
+            .onFailure { Log.e("BattleOverlay", "Could not prepare alternate stance damage", it) }
+            .getOrNull() ?: return
+        val (prepared, label) = alternate
+        directAlternateCache[prepared.cacheKey]?.let { cached ->
+            directOverlay.updateDamageAlternate(cached, label)
+            return
+        }
+        runtime.calculate(prepared.request) { rawResult ->
+            if (generation != directCalculationGeneration || !directOverlay.isCalculationShown) return@calculate
+            rawResult.onSuccess { raw ->
+                runCatching { parseBattleDirectDamageValues(raw, prepared.configuredMoves) }
+                    .onSuccess { values ->
+                        Log.i(
+                            "BattleOverlay",
+                            "Alternate stance damage key=${prepared.cacheKey} label=$label values=$values",
+                        )
+                        directAlternateCache[prepared.cacheKey] = values
+                        directOverlay.updateDamageAlternate(values, label)
+                    }
+                    .onFailure { Log.e("BattleOverlay", "Could not parse alternate stance damage", it) }
+            }.onFailure { Log.e("BattleOverlay", "Alternate stance calculation failed", it) }
+        }
     }
 
     /**
@@ -1525,7 +1671,6 @@ internal class BattleOverlayController(
         dismissOpponentEditor(showPanel = false)
         dismissConditions(showPanel = false)
         dismissSpeedLine(showPanel = false)
-        dismissSetup(showBubble = false)
         dismissPanel(showBubble = false)
         panelNavigation.collapse()
         onOverlayVisible(false)
@@ -1534,7 +1679,6 @@ internal class BattleOverlayController(
     fun onSafeAreaChanged() {
         directOverlay.reflow()
         listOf(
-            Triple(setupView, setupWindowState, null),
             Triple(panelView, panelWindowState, battlePanelPositionState),
             Triple(conditionsView, conditionsWindowState, battlePanelPositionState),
             Triple(opponentEditorView, opponentEditorWindowState, battlePanelPositionState),
@@ -1836,7 +1980,7 @@ internal class BattleOverlayController(
                     showOpponentEditor(currentPanelSession(session), teams, opponent, basePreset)
                 })
                 addView(miniButton("速度线", secondary = true) { showSpeedLine(currentPanelSession(session), teams) })
-        addView(miniButton("重新识别", secondary = true) { showSetup() })
+        addView(miniButton("重新识别", secondary = true) { onRecognizeOwnTeam() })
             })
         }
 
@@ -1912,7 +2056,7 @@ internal class BattleOverlayController(
                 updateSession(session.copy(calculation = defaultsForDirection(session, ownTeam, "OPPONENT_TO_OWN")), teams)
             })
             addView(actionButton("速度线", secondary = true) { showSpeedLine(session, teams) })
-        addView(actionButton("重新确认阵容", secondary = true) { showSetup() })
+            addView(actionButton("重新识别我方", secondary = true) { onRecognizeOwnTeam() })
         })
 
         val sides = horizontal(spacing = 12)
@@ -2828,7 +2972,6 @@ internal class BattleOverlayController(
         onSelected: (EntityValue) -> Unit,
     ) {
         dismissSpeciesSearch(showPrevious = false)
-        setupView?.visibility = View.INVISIBLE
         panelView?.visibility = View.INVISIBLE
         val root = compactPanelRoot()
         val params = rightRailPanelParams(searchWindowState, widthDp = 360)
@@ -3231,36 +3374,6 @@ internal class BattleOverlayController(
             presetRepository.statsFor(config.species, config.statPoints, config.statAlignment)
         }
         return config.copy(ability = ability, moves = moves, actualStats = actualStats)
-    }
-
-    /** 没有已保存队伍时，按识别到的我方阵容造一份默认队伍（0 加点、图鉴默认特性与招式）。 */
-    private fun buildDefaultOwnTeam(preview: TeamPreviewDraft): SavedTeam? {
-        val species = preview.ownSlots
-            .sortedBy { it.slotIndex }
-            .mapNotNull { slot -> slot.candidates.firstOrNull()?.entity }
-        if (species.size != 6) return null
-        val zero = StatFields(hp = "0", atk = "0", def = "0", spa = "0", spd = "0", spe = "0")
-        val pokemon = species.map { entity ->
-            val localized = presetRepository.localizeSpecies(entity)
-            PokemonConfig(
-                species = localized,
-                level = 50,
-                actualStats = presetRepository.statsFor(localized, zero, null),
-                statPoints = zero,
-                ability = presetRepository.abilitiesFor(localized).firstOrNull(),
-                item = null,
-                moves = presetRepository.learnableMovesFor(localized).filter { (it.basePower ?: 0) > 0 }.take(4),
-            )
-        }
-        val name = "对局默认队伍 " + LocalDateTime.now().format(DateTimeFormatter.ofPattern("MM-dd HH:mm"))
-        return runCatching { TeamRepository.saveShowdownTeam(context, name, pokemon) }
-            .onFailure { Log.e("BattleOverlay", "Could not create default own team", it) }
-            .getOrNull()
-    }
-
-    private fun matchCount(team: SavedTeam, preview: TeamPreviewDraft): Int {
-        val recognized = preview.ownSlots.mapNotNull { it.candidates.firstOrNull()?.entity?.showdownId }.map(::normalize).toSet()
-        return team.pokemon.count { normalize(it.species.showdownId) in recognized }
     }
 
     private fun compactPanelRoot() = vertical(spacing = 6).apply {
@@ -3676,19 +3789,13 @@ internal class BattleOverlayController(
 
     private fun dp(value: Int) = (value * density).roundToInt()
 
-    private fun dismissSetup(showBubble: Boolean = true) {
-        setupView?.let { runCatching { windowManager.removeView(it) } }
-        setupView = null
-        if (showBubble && panelView == null && conditionsView == null && opponentEditorView == null && speciesSearchView == null && speedLineView == null) onOverlayVisible(false)
-    }
-
     private fun dismissPanel(showBubble: Boolean = true) {
         calculationGeneration++
         panelView?.let { runCatching { windowManager.removeView(it) } }
         panelView = null
         panelSession = null
         panelCalculationBinding = null
-        if (showBubble && setupView == null && conditionsView == null && opponentEditorView == null && speciesSearchView == null && speedLineView == null) onOverlayVisible(false)
+        if (showBubble && conditionsView == null && opponentEditorView == null && speciesSearchView == null && speedLineView == null) onOverlayVisible(false)
     }
 
     private fun collapsePanel() {
@@ -3710,7 +3817,7 @@ internal class BattleOverlayController(
                 it.visibility = View.VISIBLE
             }
         }
-        if (panelView == null && setupView == null && opponentEditorView == null && speciesSearchView == null && speedLineView == null) onOverlayVisible(false)
+        if (panelView == null && opponentEditorView == null && speciesSearchView == null && speedLineView == null) onOverlayVisible(false)
     }
 
     private fun dismissOpponentEditor(showPanel: Boolean = true) {
@@ -3723,17 +3830,16 @@ internal class BattleOverlayController(
                 it.visibility = View.VISIBLE
             }
         }
-        if (panelView == null && setupView == null && conditionsView == null && speciesSearchView == null && speedLineView == null) onOverlayVisible(false)
+        if (panelView == null && conditionsView == null && speciesSearchView == null && speedLineView == null) onOverlayVisible(false)
     }
 
     private fun dismissSpeciesSearch(showPrevious: Boolean = true) {
         speciesSearchView?.let { runCatching { windowManager.removeView(it) } }
         speciesSearchView = null
         if (showPrevious) {
-            setupView?.visibility = View.VISIBLE
-            panelView?.visibility = View.VISIBLE
+                panelView?.visibility = View.VISIBLE
         }
-        if (setupView == null && panelView == null && conditionsView == null && opponentEditorView == null && speedLineView == null) onOverlayVisible(false)
+        if (panelView == null && conditionsView == null && opponentEditorView == null && speedLineView == null) onOverlayVisible(false)
     }
 
     private fun dismissSpeedLine(showPanel: Boolean = true) {
@@ -3743,7 +3849,7 @@ internal class BattleOverlayController(
             panelNavigation.show(BattlePanelPage.DAMAGE)
             showPanel()
         }
-        if (panelView == null && setupView == null && conditionsView == null && opponentEditorView == null && speciesSearchView == null) {
+        if (panelView == null && conditionsView == null && opponentEditorView == null && speciesSearchView == null) {
             onOverlayVisible(false)
         }
     }
@@ -3901,7 +4007,12 @@ internal class BattleOverlayController(
 
     companion object {
         private const val PREFS = "battle-overlay-prefs"
+        private const val AEGISLASH_SHIELD_ID = "aegislashshield"
+        private const val AEGISLASH_BLADE_ID = "aegislashblade"
         private const val KEY_OPPONENT_MEGA_SUFFIX = "opponent-mega-suffix"
+        private const val KEY_OWN_MEGA = "own-mega"
+        private const val KEY_OWN_STAGE = "own-stat-stage"
+        private const val KEY_OPPONENT_STAGE = "opponent-stat-stage"
         private val BACKGROUND = Color.rgb(14, 20, 32)
 
         private val SURFACE = Color.rgb(24, 33, 49)

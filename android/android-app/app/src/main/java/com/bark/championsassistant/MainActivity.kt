@@ -12,6 +12,7 @@ import android.os.Bundle
 import android.provider.Settings
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
@@ -109,7 +110,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         LegacyRecognitionStorageMigration.runInBackground(this)
         engineRuntime = DamageEngineRuntime(this)
-        setContent { ChampionsDamageApp(engineRuntime, this) }
+        setContent { ChampionsDamageApp(engineRuntime, this, intent?.getStringExtra("tab")) }
     }
 
     override fun onDestroy() {
@@ -189,22 +190,31 @@ private val AppColors = lightColorScheme(
 private enum class AppTab(val label: String, val glyph: String) {
     CALC("计算器", "⚔"),
     DEX("图鉴", "◈"),
-    BATTLE("对局", "◉"),
+    ITEMS("持有物", "▤"),
+    BATTLE("对战", "◉"),
 }
 
 private enum class AppPanel { ABOUT }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun ChampionsDamageApp(runtime: DamageEngineRuntime, activity: MainActivity) {
+private fun ChampionsDamageApp(runtime: DamageEngineRuntime, activity: MainActivity, initialTab: String? = null) {
     var selectedTabName by rememberSaveable { mutableStateOf(AppTab.CALC.name) }
+    // 调试用：adb 指定启动 tab（measure 图鉴 / 持有物 的进入耗时）。
+    LaunchedEffect(initialTab) {
+        if (initialTab != null && AppTab.entries.any { it.name == initialTab }) selectedTabName = initialTab
+    }
     var activePanelName by rememberSaveable { mutableStateOf<String?>(null) }
     val selectedTab = AppTab.valueOf(selectedTabName)
     val activePanel = activePanelName?.let { AppPanel.valueOf(it) }
     val context = LocalContext.current
     val presetRepository = remember(context) { OpponentPresetRepository(context) }
+    val codexRepository = remember(context) { CodexRepository(context) }
     val teamLibraryRevision by CaptureUiState.teamLibraryRevision
     val teamsResult = remember(teamLibraryRevision) { runCatching { TeamRepository.load(context) } }
+
+    // 「关于与更新」面板也要能被系统返回键关掉，不然会一路退到桌面。
+    BackHandler(enabled = activePanel != null) { activePanelName = null }
 
     MaterialTheme(colorScheme = AppColors) {
         Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
@@ -275,8 +285,9 @@ private fun ChampionsDamageApp(runtime: DamageEngineRuntime, activity: MainActiv
                             when (activePanel) {
                                 AppPanel.ABOUT -> SettingsScreen(runtime)
                                 null -> when (selectedTab) {
-                                    AppTab.CALC -> ManualCalculatorScreen(runtime, presetRepository)
-                                    AppTab.DEX -> PokedexScreen(repository = presetRepository)
+                                    AppTab.CALC -> ManualCalculatorScreen(runtime, presetRepository, codexRepository)
+                                    AppTab.DEX -> PokedexScreen(repository = presetRepository, codex = codexRepository)
+                                    AppTab.ITEMS -> ItemListScreen(codex = codexRepository)
                                     AppTab.BATTLE -> OwnTeamCaptureScreen(activity, teams, presetRepository)
                                 }
                             }
@@ -447,6 +458,7 @@ private data class SavedPokemonOption(
 private fun ManualCalculatorScreen(
     runtime: DamageEngineRuntime,
     repository: OpponentPresetRepository,
+    codex: CodexRepository,
 ) {
     val catalog = repository.speciesCatalog
 
@@ -555,7 +567,9 @@ private fun ManualCalculatorScreen(
             attackerStages = mapOf(offenseStat to attackerStage),
             defenderStages = mapOf(defenseStat to defenderStage),
         )
+        val startedAt = android.os.SystemClock.elapsedRealtime()
         runtime.calculate(request) { calculation ->
+            android.util.Log.i("CalcPerf", "engine ${android.os.SystemClock.elapsedRealtime() - startedAt}ms")
             calculating = false
             calculation.fold(
                 onSuccess = { raw ->
@@ -583,13 +597,36 @@ private fun ManualCalculatorScreen(
     val currentPicker = pickerRequest
     if (currentPicker != null) {
         val entries: List<PickerEntry> = when (currentPicker.kind) {
-            PickerKind.SPECIES -> repository.speciesCatalog.map { it.asPickerEntry() }
-            PickerKind.ITEM -> repository.itemCatalog.map { it.asPickerEntry() }
+            PickerKind.SPECIES -> repository.speciesCatalog.map { species ->
+                val form = repository.formFor(species)
+                PickerEntry(
+                    id = species.showdownId,
+                    label = species.displayName,
+                    searchKeys = listOf(species.displayName, species.showdownId, species.canonicalId),
+                    avatarShowdownId = species.showdownId,
+                    subtitle = form?.types?.joinToString(" / ") { TYPE_NAMES_CN[it] ?: it },
+                )
+            }
+            PickerKind.ITEM -> repository.itemCatalog.map { item ->
+                PickerEntry(
+                    id = item.showdownId,
+                    label = item.displayName,
+                    searchKeys = listOf(item.displayName, item.showdownId, item.canonicalId),
+                    itemIcon = codex.itemFor(item.showdownId)?.icon.orEmpty(),
+                    subtitle = codex.itemFor(item.showdownId)?.tags?.joinToString(" / "),
+                )
+            }
             PickerKind.MOVE -> learnableMoves.map { move ->
                 PickerEntry(
                     id = move.entity.showdownId,
-                    label = "[${repository.moveTypeLabel(move)}] ${move.entity.displayName}",
+                    label = move.entity.displayName,
                     searchKeys = listOf(move.entity.displayName, move.entity.showdownId, move.entity.canonicalId),
+                    type = move.type,
+                    subtitle = buildString {
+                        append(categoryLabelFor(move.category))
+                        (move.basePower ?: 0).takeIf { it > 0 }?.let { append(" · 威力 ").append(it) }
+                        codex.moveFor(move.entity.showdownId)?.pp?.takeIf { it > 0 }?.let { append(" · PP ").append(it) }
+                    },
                 )
             }
         }
@@ -775,8 +812,10 @@ private fun CalculatorSideCard(
     val speciesAbilities = repository.abilitiesFor(config.species)
     val abilities = (listOfNotNull(config.ability) + speciesAbilities)
         .distinctBy { it.showdownId.lowercase() }
-    val selectedMoveName = learnableMoves.firstOrNull { it.entity.showdownId == selectedMove }?.entity?.displayName
-        ?: "未选择招式"
+    val selectedMoveValue = learnableMoves.firstOrNull { it.entity.showdownId == selectedMove }
+    val selectedMoveName = selectedMoveValue?.entity?.displayName ?: "未选择招式"
+    val selectedMoveType = selectedMoveValue?.type
+    val selectedMovePower = selectedMoveValue?.basePower
 
     fun updateConfig(next: PokemonConfig) {
         onStateChange(state.copy(config = next, sourceLabel = "手动配置", profileId = null))
@@ -796,13 +835,44 @@ private fun CalculatorSideCard(
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
 
-            OutlinedButton(onClick = { onRequestPicker(PickerKind.SPECIES) }, modifier = Modifier.fillMaxWidth()) {
-                Text(config.species.displayName, modifier = Modifier.weight(1f))
-            }
-
-            if (isAttacker) {
-                OutlinedButton(onClick = { onRequestPicker(PickerKind.MOVE) }, modifier = Modifier.fillMaxWidth()) {
-                    Text("招式：$selectedMoveName", modifier = Modifier.weight(1f))
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                PokemonAvatar(
+                    showdownId = config.species.showdownId,
+                    displayName = config.species.displayName,
+                    size = 56.dp,
+                    fallbackColor = Color(0xFFE3E5EA),
+                )
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    OutlinedButton(
+                        onClick = { onRequestPicker(PickerKind.SPECIES) },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text(config.species.displayName, modifier = Modifier.weight(1f), textAlign = TextAlign.Start)
+                        Text("›", color = Color(0xFF9AA0A6))
+                    }
+                    if (isAttacker) {
+                        OutlinedButton(
+                            onClick = { onRequestPicker(PickerKind.MOVE) },
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            selectedMoveType?.let { type ->
+                                TypeBadge(type, modifier = Modifier.width(46.dp).height(20.dp))
+                                Spacer(Modifier.width(8.dp))
+                            }
+                            Text("招式：$selectedMoveName", modifier = Modifier.weight(1f))
+                            selectedMovePower?.takeIf { it > 0 }?.let {
+                                Text(
+                                    "威力 $it",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                    }
                 }
             }
 
@@ -1250,12 +1320,22 @@ private fun PokemonConfigEditor(
 
 private enum class PickerKind { SPECIES, ITEM, MOVE }
 
+private fun categoryLabelFor(category: String?): String = when (category) {
+    "Physical" -> "物理"
+    "Special" -> "特殊"
+    else -> "变化"
+}
+
 private data class PickerRequest(val kind: PickerKind, val attacker: Boolean)
 
 private data class PickerEntry(
     val id: String,
     val label: String,
     val searchKeys: List<String>,
+    val avatarShowdownId: String? = null,
+    val itemIcon: String? = null,
+    val type: String? = null,
+    val subtitle: String? = null,
 ) {
     fun matchesQuery(rawQuery: String): Boolean {
         val query = normalizeSearchText(rawQuery)
@@ -1268,6 +1348,7 @@ private fun EntityValue.asPickerEntry(): PickerEntry = PickerEntry(
     id = showdownId,
     label = displayName,
     searchKeys = listOf(displayName, showdownId, canonicalId),
+    avatarShowdownId = showdownId,
 )
 
 @Composable
@@ -1282,6 +1363,10 @@ private fun SelectionPage(
     val filtered = remember(entries, query) { entries.filter { it.matchesQuery(query) } }
     val focusRequester = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
+
+    // 选择页面是叠在计算器上的一层，返回键只关掉这一层，不要直接退出 app。
+    BackHandler(enabled = true) { onDismiss() }
+
     LaunchedEffect(Unit) {
         kotlinx.coroutines.delay(80)
         runCatching { focusRequester.requestFocus() }
@@ -1320,19 +1405,51 @@ private fun SelectionPage(
             }
             LazyColumn(
                 Modifier.fillMaxWidth().weight(1f),
-                verticalArrangement = Arrangement.spacedBy(2.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 itemsIndexed(filtered.take(300)) { _, entry ->
-                    TextButton(onClick = { onSelect(entry.id) }, modifier = Modifier.fillMaxWidth()) {
-                        Text(
-                            entry.label,
-                            modifier = Modifier.weight(1f),
-                            textAlign = TextAlign.Start,
-                        )
-                    }
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    PickerRow(entry, onSelect)
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun PickerRow(entry: PickerEntry, onSelect: (String) -> Unit) {
+    Card(
+        Modifier.fillMaxWidth().clickable { onSelect(entry.id) },
+        colors = CardDefaults.cardColors(containerColor = Color(0xFFFFFFFF)),
+        shape = RoundedCornerShape(12.dp),
+    ) {
+        Row(
+            Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            when {
+                entry.avatarShowdownId != null -> PokemonAvatar(
+                    showdownId = entry.avatarShowdownId,
+                    displayName = entry.label,
+                    size = 40.dp,
+                )
+                entry.itemIcon != null -> ItemAvatar(entry.itemIcon, entry.label, size = 36.dp)
+                entry.type != null -> TypeBadge(entry.type, modifier = Modifier.width(52.dp).height(22.dp))
+                else -> Unit
+            }
+            Spacer(Modifier.width(10.dp))
+            Column(Modifier.weight(1f)) {
+                Text(entry.label, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
+                entry.subtitle?.takeIf { it.isNotBlank() }?.let {
+                    Text(
+                        it,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+            Text("›", color = Color(0xFF9AA0A6))
         }
     }
 }

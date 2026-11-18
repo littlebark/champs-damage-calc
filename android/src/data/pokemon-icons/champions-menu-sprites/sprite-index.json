@@ -1,0 +1,1957 @@
+{
+ "Abomasnow": {
+  "dex": 460,
+  "normal": "Menu_Champs_0460.png",
+  "shiny": "Menu_Champs_0460_shiny.png"
+ },
+ "Abomasnow-Mega": {
+  "dex": 460,
+  "normal": "Menu_Champs_0460-Mega.png",
+  "shiny": "Menu_Champs_0460-Mega_shiny.png"
+ },
+ "Absol": {
+  "dex": 359,
+  "normal": "Menu_Champs_0359.png",
+  "shiny": "Menu_Champs_0359_shiny.png"
+ },
+ "Absol-Mega": {
+  "dex": 359,
+  "normal": "Menu_Champs_0359-Mega.png",
+  "shiny": "Menu_Champs_0359-Mega_shiny.png"
+ },
+ "Absol-Mega-Z": {
+  "dex": 359,
+  "normal": "Menu_Champs_0359-Mega_Z.png",
+  "shiny": "Menu_Champs_0359-Mega_Z_shiny.png"
+ },
+ "Aegislash": {
+  "dex": 681,
+  "normal": "Menu_Champs_0681.png",
+  "shiny": "Menu_Champs_0681_shiny.png"
+ },
+ "Aegislash-Blade": {
+  "dex": 681,
+  "normal": "Menu_Champs_0681-Blade.png",
+  "shiny": "Menu_Champs_0681-Blade_shiny.png"
+ },
+ "Aerodactyl": {
+  "dex": 142,
+  "normal": "Menu_Champs_0142.png",
+  "shiny": "Menu_Champs_0142_shiny.png"
+ },
+ "Aerodactyl-Mega": {
+  "dex": 142,
+  "normal": "Menu_Champs_0142-Mega.png",
+  "shiny": "Menu_Champs_0142-Mega_shiny.png"
+ },
+ "Aggron": {
+  "dex": 306,
+  "normal": "Menu_Champs_0306.png",
+  "shiny": "Menu_Champs_0306_shiny.png"
+ },
+ "Aggron-Mega": {
+  "dex": 306,
+  "normal": "Menu_Champs_0306-Mega.png",
+  "shiny": "Menu_Champs_0306-Mega_shiny.png"
+ },
+ "Alakazam": {
+  "dex": 65,
+  "normal": "Menu_Champs_0065.png",
+  "shiny": "Menu_Champs_0065_shiny.png"
+ },
+ "Alakazam-Mega": {
+  "dex": 65,
+  "normal": "Menu_Champs_0065-Mega.png",
+  "shiny": "Menu_Champs_0065-Mega_shiny.png"
+ },
+ "Alcremie": {
+  "dex": 869,
+  "normal": "Menu_Champs_0869.png",
+  "shiny": "Menu_Champs_0869_shiny.png"
+ },
+ "Alcremie-Caramel-Swirl": {
+  "dex": 869,
+  "normal": "Menu_Champs_0869-Caramel_Swirl.png",
+  "shiny": "Menu_Champs_0869-Caramel_Swirl_shiny.png"
+ },
+ "Alcremie-Lemon-Cream": {
+  "dex": 869,
+  "normal": "Menu_Champs_0869-Lemon_Cream.png",
+  "shiny": "Menu_Champs_0869-Lemon_Cream_shiny.png"
+ },
+ "Alcremie-Matcha-Cream": {
+  "dex": 869,
+  "normal": "Menu_Champs_0869-Matcha_Cream.png",
+  "shiny": "Menu_Champs_0869-Matcha_Cream_shiny.png"
+ },
+ "Alcremie-Mint-Cream": {
+  "dex": 869,
+  "normal": "Menu_Champs_0869-Mint_Cream.png",
+  "shiny": "Menu_Champs_0869-Mint_Cream_shiny.png"
+ },
+ "Alcremie-Rainbow-Swirl": {
+  "dex": 869,
+  "normal": "Menu_Champs_0869-Rainbow_Swirl.png",
+  "shiny": "Menu_Champs_0869-Rainbow_Swirl_shiny.png"
+ },
+ "Alcremie-Ruby-Cream": {
+  "dex": 869,
+  "normal": "Menu_Champs_0869-Ruby_Cream.png",
+  "shiny": "Menu_Champs_0869-Ruby_Cream_shiny.png"
+ },
+ "Alcremie-Ruby-Swirl": {
+  "dex": 869,
+  "normal": "Menu_Champs_0869-Ruby_Swirl.png",
+  "shiny": "Menu_Champs_0869-Ruby_Swirl_shiny.png"
+ },
+ "Alcremie-Salted-Cream": {
+  "dex": 869,
+  "normal": "Menu_Champs_0869-Salted_Cream.png",
+  "shiny": "Menu_Champs_0869-Salted_Cream_shiny.png"
+ },
+ "Altaria": {
+  "dex": 334,
+  "normal": "Menu_Champs_0334.png",
+  "shiny": "Menu_Champs_0334_shiny.png"
+ },
+ "Altaria-Mega": {
+  "dex": 334,
+  "normal": "Menu_Champs_0334-Mega.png",
+  "shiny": "Menu_Champs_0334-Mega_shiny.png"
+ },
+ "Ampharos": {
+  "dex": 181,
+  "normal": "Menu_Champs_0181.png",
+  "shiny": "Menu_Champs_0181_shiny.png"
+ },
+ "Ampharos-Mega": {
+  "dex": 181,
+  "normal": "Menu_Champs_0181-Mega.png",
+  "shiny": "Menu_Champs_0181-Mega_shiny.png"
+ },
+ "Annihilape": {
+  "dex": 979,
+  "normal": "Menu_Champs_0979.png",
+  "shiny": "Menu_Champs_0979_shiny.png"
+ },
+ "Appletun": {
+  "dex": 842,
+  "normal": "Menu_Champs_0842.png",
+  "shiny": "Menu_Champs_0842_shiny.png"
+ },
+ "Araquanid": {
+  "dex": 752,
+  "normal": "Menu_Champs_0752.png",
+  "shiny": "Menu_Champs_0752_shiny.png"
+ },
+ "Arbok": {
+  "dex": 24,
+  "normal": "Menu_Champs_0024.png",
+  "shiny": "Menu_Champs_0024_shiny.png"
+ },
+ "Arboliva": {
+  "dex": 930,
+  "normal": "Menu_Champs_0930.png",
+  "shiny": "Menu_Champs_0930_shiny.png"
+ },
+ "Arcanine": {
+  "dex": 59,
+  "normal": "Menu_Champs_0059.png",
+  "shiny": "Menu_Champs_0059_shiny.png"
+ },
+ "Arcanine-Hisui": {
+  "dex": 59,
+  "normal": "Menu_Champs_0059-Hisui.png",
+  "shiny": "Menu_Champs_0059-Hisui_shiny.png"
+ },
+ "Archaludon": {
+  "dex": 1018,
+  "normal": "Menu_Champs_1018.png",
+  "shiny": "Menu_Champs_1018_shiny.png"
+ },
+ "Ariados": {
+  "dex": 168,
+  "normal": "Menu_Champs_0168.png",
+  "shiny": "Menu_Champs_0168_shiny.png"
+ },
+ "Armarouge": {
+  "dex": 936,
+  "normal": "Menu_Champs_0936.png",
+  "shiny": "Menu_Champs_0936_shiny.png"
+ },
+ "Aromatisse": {
+  "dex": 683,
+  "normal": "Menu_Champs_0683.png",
+  "shiny": "Menu_Champs_0683_shiny.png"
+ },
+ "Audino": {
+  "dex": 531,
+  "normal": "Menu_Champs_0531.png",
+  "shiny": "Menu_Champs_0531_shiny.png"
+ },
+ "Audino-Mega": {
+  "dex": 531,
+  "normal": "Menu_Champs_0531-Mega.png",
+  "shiny": "Menu_Champs_0531-Mega_shiny.png"
+ },
+ "Aurorus": {
+  "dex": 699,
+  "normal": "Menu_Champs_0699.png",
+  "shiny": "Menu_Champs_0699_shiny.png"
+ },
+ "Avalugg": {
+  "dex": 713,
+  "normal": "Menu_Champs_0713.png",
+  "shiny": "Menu_Champs_0713_shiny.png"
+ },
+ "Avalugg-Hisui": {
+  "dex": 713,
+  "normal": "Menu_Champs_0713-Hisui.png",
+  "shiny": "Menu_Champs_0713-Hisui_shiny.png"
+ },
+ "Azumarill": {
+  "dex": 184,
+  "normal": "Menu_Champs_0184.png",
+  "shiny": "Menu_Champs_0184_shiny.png"
+ },
+ "Banette": {
+  "dex": 354,
+  "normal": "Menu_Champs_0354.png",
+  "shiny": "Menu_Champs_0354_shiny.png"
+ },
+ "Banette-Mega": {
+  "dex": 354,
+  "normal": "Menu_Champs_0354-Mega.png",
+  "shiny": "Menu_Champs_0354-Mega_shiny.png"
+ },
+ "Barbaracle": {
+  "dex": 689,
+  "normal": "Menu_Champs_0689.png",
+  "shiny": "Menu_Champs_0689_shiny.png"
+ },
+ "Barbaracle-Mega": {
+  "dex": 689,
+  "normal": "Menu_Champs_0689-Mega.png",
+  "shiny": "Menu_Champs_0689-Mega_shiny.png"
+ },
+ "Basculegion": {
+  "dex": 902,
+  "normal": "Menu_Champs_0902.png",
+  "shiny": "Menu_Champs_0902_shiny.png"
+ },
+ "Basculegion-F": {
+  "dex": 902,
+  "normal": "Menu_Champs_0902-Female.png",
+  "shiny": "Menu_Champs_0902-Female_shiny.png"
+ },
+ "Bastiodon": {
+  "dex": 411,
+  "normal": "Menu_Champs_0411.png",
+  "shiny": "Menu_Champs_0411_shiny.png"
+ },
+ "Baxcalibur": {
+  "dex": 998,
+  "normal": "Menu_Champs_0998.png",
+  "shiny": "Menu_Champs_0998_shiny.png"
+ },
+ "Baxcalibur-Mega": {
+  "dex": 998,
+  "normal": "Menu_Champs_0998-Mega.png",
+  "shiny": "Menu_Champs_0998-Mega_shiny.png"
+ },
+ "Beartic": {
+  "dex": 614,
+  "normal": "Menu_Champs_0614.png",
+  "shiny": "Menu_Champs_0614_shiny.png"
+ },
+ "Beedrill": {
+  "dex": 15,
+  "normal": "Menu_Champs_0015.png",
+  "shiny": "Menu_Champs_0015_shiny.png"
+ },
+ "Beedrill-Mega": {
+  "dex": 15,
+  "normal": "Menu_Champs_0015-Mega.png",
+  "shiny": "Menu_Champs_0015-Mega_shiny.png"
+ },
+ "Bellibolt": {
+  "dex": 939,
+  "normal": "Menu_Champs_0939.png",
+  "shiny": "Menu_Champs_0939_shiny.png"
+ },
+ "Blastoise": {
+  "dex": 9,
+  "normal": "Menu_Champs_0009.png",
+  "shiny": "Menu_Champs_0009_shiny.png"
+ },
+ "Blastoise-Mega": {
+  "dex": 9,
+  "normal": "Menu_Champs_0009-Mega.png",
+  "shiny": "Menu_Champs_0009-Mega_shiny.png"
+ },
+ "Blaziken": {
+  "dex": 257,
+  "normal": "Menu_Champs_0257.png",
+  "shiny": "Menu_Champs_0257_shiny.png"
+ },
+ "Blaziken-Mega": {
+  "dex": 257,
+  "normal": "Menu_Champs_0257-Mega.png",
+  "shiny": "Menu_Champs_0257-Mega_shiny.png"
+ },
+ "Camerupt": {
+  "dex": 323,
+  "normal": "Menu_Champs_0323.png",
+  "shiny": "Menu_Champs_0323_shiny.png"
+ },
+ "Camerupt-Mega": {
+  "dex": 323,
+  "normal": "Menu_Champs_0323-Mega.png",
+  "shiny": "Menu_Champs_0323-Mega_shiny.png"
+ },
+ "Castform": {
+  "dex": 351,
+  "normal": "Menu_Champs_0351.png",
+  "shiny": "Menu_Champs_0351_shiny.png"
+ },
+ "Castform-Rainy": {
+  "dex": 351,
+  "normal": "Menu_Champs_0351-Rainy.png",
+  "shiny": "Menu_Champs_0351-Rainy_shiny.png"
+ },
+ "Castform-Snowy": {
+  "dex": 351,
+  "normal": "Menu_Champs_0351-Snowy.png",
+  "shiny": "Menu_Champs_0351-Snowy_shiny.png"
+ },
+ "Castform-Sunny": {
+  "dex": 351,
+  "normal": "Menu_Champs_0351-Sunny.png",
+  "shiny": "Menu_Champs_0351-Sunny_shiny.png"
+ },
+ "Ceruledge": {
+  "dex": 937,
+  "normal": "Menu_Champs_0937.png",
+  "shiny": "Menu_Champs_0937_shiny.png"
+ },
+ "Chandelure": {
+  "dex": 609,
+  "normal": "Menu_Champs_0609.png",
+  "shiny": "Menu_Champs_0609_shiny.png"
+ },
+ "Chandelure-Mega": {
+  "dex": 609,
+  "normal": "Menu_Champs_0609-Mega.png",
+  "shiny": "Menu_Champs_0609-Mega_shiny.png"
+ },
+ "Charizard": {
+  "dex": 6,
+  "normal": "Menu_Champs_0006.png",
+  "shiny": "Menu_Champs_0006_shiny.png"
+ },
+ "Charizard-Mega-X": {
+  "dex": 6,
+  "normal": "Menu_Champs_0006-Mega_X.png",
+  "shiny": "Menu_Champs_0006-Mega_X_shiny.png"
+ },
+ "Charizard-Mega-Y": {
+  "dex": 6,
+  "normal": "Menu_Champs_0006-Mega_Y.png",
+  "shiny": "Menu_Champs_0006-Mega_Y_shiny.png"
+ },
+ "Chesnaught": {
+  "dex": 652,
+  "normal": "Menu_Champs_0652.png",
+  "shiny": "Menu_Champs_0652_shiny.png"
+ },
+ "Chesnaught-Mega": {
+  "dex": 652,
+  "normal": "Menu_Champs_0652-Mega.png",
+  "shiny": "Menu_Champs_0652-Mega_shiny.png"
+ },
+ "Chimecho": {
+  "dex": 358,
+  "normal": "Menu_Champs_0358.png",
+  "shiny": "Menu_Champs_0358_shiny.png"
+ },
+ "Chimecho-Mega": {
+  "dex": 358,
+  "normal": "Menu_Champs_0358-Mega.png",
+  "shiny": "Menu_Champs_0358-Mega_shiny.png"
+ },
+ "Cinderace": {
+  "dex": 815,
+  "normal": "Menu_Champs_0815.png",
+  "shiny": "Menu_Champs_0815_shiny.png"
+ },
+ "Clawitzer": {
+  "dex": 693,
+  "normal": "Menu_Champs_0693.png",
+  "shiny": "Menu_Champs_0693_shiny.png"
+ },
+ "Clefable": {
+  "dex": 36,
+  "normal": "Menu_Champs_0036.png",
+  "shiny": "Menu_Champs_0036_shiny.png"
+ },
+ "Clefable-Mega": {
+  "dex": 36,
+  "normal": "Menu_Champs_0036-Mega.png",
+  "shiny": "Menu_Champs_0036-Mega_shiny.png"
+ },
+ "Cofagrigus": {
+  "dex": 563,
+  "normal": "Menu_Champs_0563.png",
+  "shiny": "Menu_Champs_0563_shiny.png"
+ },
+ "Conkeldurr": {
+  "dex": 534,
+  "normal": "Menu_Champs_0534.png",
+  "shiny": "Menu_Champs_0534_shiny.png"
+ },
+ "Corviknight": {
+  "dex": 823,
+  "normal": "Menu_Champs_0823.png",
+  "shiny": "Menu_Champs_0823_shiny.png"
+ },
+ "Crabominable": {
+  "dex": 740,
+  "normal": "Menu_Champs_0740.png",
+  "shiny": "Menu_Champs_0740_shiny.png"
+ },
+ "Crabominable-Mega": {
+  "dex": 740,
+  "normal": "Menu_Champs_0740-Mega.png",
+  "shiny": "Menu_Champs_0740-Mega_shiny.png"
+ },
+ "Decidueye": {
+  "dex": 724,
+  "normal": "Menu_Champs_0724.png",
+  "shiny": "Menu_Champs_0724_shiny.png"
+ },
+ "Decidueye-Hisui": {
+  "dex": 724,
+  "normal": "Menu_Champs_0724-Hisui.png",
+  "shiny": "Menu_Champs_0724-Hisui_shiny.png"
+ },
+ "Dedenne": {
+  "dex": 702,
+  "normal": "Menu_Champs_0702.png",
+  "shiny": "Menu_Champs_0702_shiny.png"
+ },
+ "Delphox": {
+  "dex": 655,
+  "normal": "Menu_Champs_0655.png",
+  "shiny": "Menu_Champs_0655_shiny.png"
+ },
+ "Delphox-Mega": {
+  "dex": 655,
+  "normal": "Menu_Champs_0655-Mega.png",
+  "shiny": "Menu_Champs_0655-Mega_shiny.png"
+ },
+ "Diggersby": {
+  "dex": 660,
+  "normal": "Menu_Champs_0660.png",
+  "shiny": "Menu_Champs_0660_shiny.png"
+ },
+ "Ditto": {
+  "dex": 132,
+  "normal": "Menu_Champs_0132.png",
+  "shiny": "Menu_Champs_0132_shiny.png"
+ },
+ "Dragalge": {
+  "dex": 691,
+  "normal": "Menu_Champs_0691.png",
+  "shiny": "Menu_Champs_0691_shiny.png"
+ },
+ "Dragalge-Mega": {
+  "dex": 691,
+  "normal": "Menu_Champs_0691-Mega.png",
+  "shiny": "Menu_Champs_0691-Mega_shiny.png"
+ },
+ "Dragapult": {
+  "dex": 887,
+  "normal": "Menu_Champs_0887.png",
+  "shiny": "Menu_Champs_0887_shiny.png"
+ },
+ "Dragonite": {
+  "dex": 149,
+  "normal": "Menu_Champs_0149.png",
+  "shiny": "Menu_Champs_0149_shiny.png"
+ },
+ "Dragonite-Mega": {
+  "dex": 149,
+  "normal": "Menu_Champs_0149-Mega.png",
+  "shiny": "Menu_Champs_0149-Mega_shiny.png"
+ },
+ "Drampa": {
+  "dex": 780,
+  "normal": "Menu_Champs_0780.png",
+  "shiny": "Menu_Champs_0780_shiny.png"
+ },
+ "Drampa-Mega": {
+  "dex": 780,
+  "normal": "Menu_Champs_0780-Mega.png",
+  "shiny": "Menu_Champs_0780-Mega_shiny.png"
+ },
+ "Eelektross": {
+  "dex": 604,
+  "normal": "Menu_Champs_0604.png",
+  "shiny": "Menu_Champs_0604_shiny.png"
+ },
+ "Eelektross-Mega": {
+  "dex": 604,
+  "normal": "Menu_Champs_0604-Mega.png",
+  "shiny": "Menu_Champs_0604-Mega_shiny.png"
+ },
+ "Emboar": {
+  "dex": 500,
+  "normal": "Menu_Champs_0500.png",
+  "shiny": "Menu_Champs_0500_shiny.png"
+ },
+ "Emboar-Mega": {
+  "dex": 500,
+  "normal": "Menu_Champs_0500-Mega.png",
+  "shiny": "Menu_Champs_0500-Mega_shiny.png"
+ },
+ "Emolga": {
+  "dex": 587,
+  "normal": "Menu_Champs_0587.png",
+  "shiny": "Menu_Champs_0587_shiny.png"
+ },
+ "Empoleon": {
+  "dex": 395,
+  "normal": "Menu_Champs_0395.png",
+  "shiny": "Menu_Champs_0395_shiny.png"
+ },
+ "Espathra": {
+  "dex": 956,
+  "normal": "Menu_Champs_0956.png",
+  "shiny": "Menu_Champs_0956_shiny.png"
+ },
+ "Espeon": {
+  "dex": 196,
+  "normal": "Menu_Champs_0196.png",
+  "shiny": "Menu_Champs_0196_shiny.png"
+ },
+ "Excadrill": {
+  "dex": 530,
+  "normal": "Menu_Champs_0530.png",
+  "shiny": "Menu_Champs_0530_shiny.png"
+ },
+ "Excadrill-Mega": {
+  "dex": 530,
+  "normal": "Menu_Champs_0530-Mega.png",
+  "shiny": "Menu_Champs_0530-Mega_shiny.png"
+ },
+ "Falinks": {
+  "dex": 870,
+  "normal": "Menu_Champs_0870.png",
+  "shiny": "Menu_Champs_0870_shiny.png"
+ },
+ "Falinks-Mega": {
+  "dex": 870,
+  "normal": "Menu_Champs_0870-Mega.png",
+  "shiny": "Menu_Champs_0870-Mega_shiny.png"
+ },
+ "Farfetch’d": {
+  "dex": 83,
+  "normal": "Menu_Champs_0083.png",
+  "shiny": "Menu_Champs_0083_shiny.png"
+ },
+ "Farigiraf": {
+  "dex": 981,
+  "normal": "Menu_Champs_0981.png",
+  "shiny": "Menu_Champs_0981_shiny.png"
+ },
+ "Feraligatr": {
+  "dex": 160,
+  "normal": "Menu_Champs_0160.png",
+  "shiny": "Menu_Champs_0160_shiny.png"
+ },
+ "Feraligatr-Mega": {
+  "dex": 160,
+  "normal": "Menu_Champs_0160-Mega.png",
+  "shiny": "Menu_Champs_0160-Mega_shiny.png"
+ },
+ "Flapple": {
+  "dex": 841,
+  "normal": "Menu_Champs_0841.png",
+  "shiny": "Menu_Champs_0841_shiny.png"
+ },
+ "Flareon": {
+  "dex": 136,
+  "normal": "Menu_Champs_0136.png",
+  "shiny": "Menu_Champs_0136_shiny.png"
+ },
+ "Floette-Eternal": {
+  "dex": 670,
+  "normal": "Menu_Champs_0670-Eternal.png",
+  "shiny": "Menu_Champs_0670-Eternal_shiny.png"
+ },
+ "Floette-Mega": {
+  "dex": 670,
+  "normal": "Menu_Champs_0670-Mega.png",
+  "shiny": "Menu_Champs_0670-Mega_shiny.png"
+ },
+ "Florges": {
+  "dex": 671,
+  "normal": "Menu_Champs_0671.png",
+  "shiny": "Menu_Champs_0671_shiny.png"
+ },
+ "Florges-Blue": {
+  "dex": 671,
+  "normal": "Menu_Champs_0671-Blue.png",
+  "shiny": "Menu_Champs_0671-Blue_shiny.png"
+ },
+ "Florges-Orange": {
+  "dex": 671,
+  "normal": "Menu_Champs_0671-Orange.png",
+  "shiny": "Menu_Champs_0671-Orange_shiny.png"
+ },
+ "Florges-White": {
+  "dex": 671,
+  "normal": "Menu_Champs_0671-White.png",
+  "shiny": "Menu_Champs_0671-White_shiny.png"
+ },
+ "Florges-Yellow": {
+  "dex": 671,
+  "normal": "Menu_Champs_0671-Yellow.png",
+  "shiny": "Menu_Champs_0671-Yellow_shiny.png"
+ },
+ "Forretress": {
+  "dex": 205,
+  "normal": "Menu_Champs_0205.png",
+  "shiny": "Menu_Champs_0205_shiny.png"
+ },
+ "Froslass": {
+  "dex": 478,
+  "normal": "Menu_Champs_0478.png",
+  "shiny": "Menu_Champs_0478_shiny.png"
+ },
+ "Froslass-Mega": {
+  "dex": 478,
+  "normal": "Menu_Champs_0478-Mega.png",
+  "shiny": "Menu_Champs_0478-Mega_shiny.png"
+ },
+ "Furfrou": {
+  "dex": 676,
+  "normal": "Menu_Champs_0676.png",
+  "shiny": "Menu_Champs_0676_shiny.png"
+ },
+ "Furfrou-Dandy": {
+  "dex": 676,
+  "normal": "Menu_Champs_0676-Dandy.png",
+  "shiny": "Menu_Champs_0676-Dandy_shiny.png"
+ },
+ "Furfrou-Debutante": {
+  "dex": 676,
+  "normal": "Menu_Champs_0676-Debutante.png",
+  "shiny": "Menu_Champs_0676-Debutante_shiny.png"
+ },
+ "Furfrou-Diamond": {
+  "dex": 676,
+  "normal": "Menu_Champs_0676-Diamond.png",
+  "shiny": "Menu_Champs_0676-Diamond_shiny.png"
+ },
+ "Furfrou-Heart": {
+  "dex": 676,
+  "normal": "Menu_Champs_0676-Heart.png",
+  "shiny": "Menu_Champs_0676-Heart_shiny.png"
+ },
+ "Furfrou-Kabuki": {
+  "dex": 676,
+  "normal": "Menu_Champs_0676-Kabuki.png",
+  "shiny": "Menu_Champs_0676-Kabuki_shiny.png"
+ },
+ "Furfrou-La Reine": {
+  "dex": 676,
+  "normal": "Menu_Champs_0676-La_Reine.png",
+  "shiny": "Menu_Champs_0676-La_Reine_shiny.png"
+ },
+ "Furfrou-Matron": {
+  "dex": 676,
+  "normal": "Menu_Champs_0676-Matron.png",
+  "shiny": "Menu_Champs_0676-Matron_shiny.png"
+ },
+ "Furfrou-Pharaoh": {
+  "dex": 676,
+  "normal": "Menu_Champs_0676-Pharaoh.png",
+  "shiny": "Menu_Champs_0676-Pharaoh_shiny.png"
+ },
+ "Furfrou-Star": {
+  "dex": 676,
+  "normal": "Menu_Champs_0676-Star.png",
+  "shiny": "Menu_Champs_0676-Star_shiny.png"
+ },
+ "Gallade": {
+  "dex": 475,
+  "normal": "Menu_Champs_0475.png",
+  "shiny": "Menu_Champs_0475_shiny.png"
+ },
+ "Gallade-Mega": {
+  "dex": 475,
+  "normal": "Menu_Champs_0475-Mega.png",
+  "shiny": "Menu_Champs_0475-Mega_shiny.png"
+ },
+ "Garbodor": {
+  "dex": 569,
+  "normal": "Menu_Champs_0569.png",
+  "shiny": "Menu_Champs_0569_shiny.png"
+ },
+ "Garchomp": {
+  "dex": 445,
+  "normal": "Menu_Champs_0445.png",
+  "shiny": "Menu_Champs_0445_shiny.png"
+ },
+ "Garchomp-Mega": {
+  "dex": 445,
+  "normal": "Menu_Champs_0445-Mega.png",
+  "shiny": "Menu_Champs_0445-Mega_shiny.png"
+ },
+ "Garchomp-Mega-Z": {
+  "dex": 445,
+  "normal": "Menu_Champs_0445-Mega_Z.png",
+  "shiny": "Menu_Champs_0445-Mega_Z_shiny.png"
+ },
+ "Gardevoir": {
+  "dex": 282,
+  "normal": "Menu_Champs_0282.png",
+  "shiny": "Menu_Champs_0282_shiny.png"
+ },
+ "Gardevoir-Mega": {
+  "dex": 282,
+  "normal": "Menu_Champs_0282-Mega.png",
+  "shiny": "Menu_Champs_0282-Mega_shiny.png"
+ },
+ "Garganacl": {
+  "dex": 934,
+  "normal": "Menu_Champs_0934.png",
+  "shiny": "Menu_Champs_0934_shiny.png"
+ },
+ "Gengar": {
+  "dex": 94,
+  "normal": "Menu_Champs_0094.png",
+  "shiny": "Menu_Champs_0094_shiny.png"
+ },
+ "Gengar-Mega": {
+  "dex": 94,
+  "normal": "Menu_Champs_0094-Mega.png",
+  "shiny": "Menu_Champs_0094-Mega_shiny.png"
+ },
+ "Gholdengo": {
+  "dex": 1000,
+  "normal": "Menu_Champs_1000.png",
+  "shiny": "Menu_Champs_1000_shiny.png"
+ },
+ "Glaceon": {
+  "dex": 471,
+  "normal": "Menu_Champs_0471.png",
+  "shiny": "Menu_Champs_0471_shiny.png"
+ },
+ "Glalie": {
+  "dex": 362,
+  "normal": "Menu_Champs_0362.png",
+  "shiny": "Menu_Champs_0362_shiny.png"
+ },
+ "Glalie-Mega": {
+  "dex": 362,
+  "normal": "Menu_Champs_0362-Mega.png",
+  "shiny": "Menu_Champs_0362-Mega_shiny.png"
+ },
+ "Glimmora": {
+  "dex": 970,
+  "normal": "Menu_Champs_0970.png",
+  "shiny": "Menu_Champs_0970_shiny.png"
+ },
+ "Glimmora-Mega": {
+  "dex": 970,
+  "normal": "Menu_Champs_0970-Mega.png",
+  "shiny": "Menu_Champs_0970-Mega_shiny.png"
+ },
+ "Gliscor": {
+  "dex": 472,
+  "normal": "Menu_Champs_0472.png",
+  "shiny": "Menu_Champs_0472_shiny.png"
+ },
+ "Gogoat": {
+  "dex": 673,
+  "normal": "Menu_Champs_0673.png",
+  "shiny": "Menu_Champs_0673_shiny.png"
+ },
+ "Golisopod": {
+  "dex": 768,
+  "normal": "Menu_Champs_0768.png",
+  "shiny": "Menu_Champs_0768_shiny.png"
+ },
+ "Golisopod-Mega": {
+  "dex": 768,
+  "normal": "Menu_Champs_0768-Mega.png",
+  "shiny": "Menu_Champs_0768-Mega_shiny.png"
+ },
+ "Golurk": {
+  "dex": 623,
+  "normal": "Menu_Champs_0623.png",
+  "shiny": "Menu_Champs_0623_shiny.png"
+ },
+ "Golurk-Mega": {
+  "dex": 623,
+  "normal": "Menu_Champs_0623-Mega.png",
+  "shiny": "Menu_Champs_0623-Mega_shiny.png"
+ },
+ "Goodra": {
+  "dex": 706,
+  "normal": "Menu_Champs_0706.png",
+  "shiny": "Menu_Champs_0706_shiny.png"
+ },
+ "Goodra-Hisui": {
+  "dex": 706,
+  "normal": "Menu_Champs_0706-Hisui.png",
+  "shiny": "Menu_Champs_0706-Hisui_shiny.png"
+ },
+ "Gourgeist": {
+  "dex": 711,
+  "normal": "Menu_Champs_0711.png",
+  "shiny": "Menu_Champs_0711_shiny.png"
+ },
+ "Gourgeist-Large": {
+  "dex": 711,
+  "normal": "Menu_Champs_0711-Large.png",
+  "shiny": "Menu_Champs_0711-Large_shiny.png"
+ },
+ "Gourgeist-Small": {
+  "dex": 711,
+  "normal": "Menu_Champs_0711-Small.png",
+  "shiny": "Menu_Champs_0711-Small_shiny.png"
+ },
+ "Gourgeist-Super": {
+  "dex": 711,
+  "normal": "Menu_Champs_0711-Jumbo.png",
+  "shiny": "Menu_Champs_0711-Jumbo_shiny.png"
+ },
+ "Grapploct": {
+  "dex": 853,
+  "normal": "Menu_Champs_0853.png",
+  "shiny": "Menu_Champs_0853_shiny.png"
+ },
+ "Greninja": {
+  "dex": 658,
+  "normal": "Menu_Champs_0658.png",
+  "shiny": "Menu_Champs_0658_shiny.png"
+ },
+ "Greninja-Mega": {
+  "dex": 658,
+  "normal": "Menu_Champs_0658-Mega.png",
+  "shiny": "Menu_Champs_0658-Mega_shiny.png"
+ },
+ "Grimmsnarl": {
+  "dex": 861,
+  "normal": "Menu_Champs_0861.png",
+  "shiny": "Menu_Champs_0861_shiny.png"
+ },
+ "Gyarados": {
+  "dex": 130,
+  "normal": "Menu_Champs_0130.png",
+  "shiny": "Menu_Champs_0130_shiny.png"
+ },
+ "Gyarados-Mega": {
+  "dex": 130,
+  "normal": "Menu_Champs_0130-Mega.png",
+  "shiny": "Menu_Champs_0130-Mega_shiny.png"
+ },
+ "Hatterene": {
+  "dex": 858,
+  "normal": "Menu_Champs_0858.png",
+  "shiny": "Menu_Champs_0858_shiny.png"
+ },
+ "Hawlucha": {
+  "dex": 701,
+  "normal": "Menu_Champs_0701.png",
+  "shiny": "Menu_Champs_0701_shiny.png"
+ },
+ "Hawlucha-Mega": {
+  "dex": 701,
+  "normal": "Menu_Champs_0701-Mega.png",
+  "shiny": "Menu_Champs_0701-Mega_shiny.png"
+ },
+ "Heliolisk": {
+  "dex": 695,
+  "normal": "Menu_Champs_0695.png",
+  "shiny": "Menu_Champs_0695_shiny.png"
+ },
+ "Heracross": {
+  "dex": 214,
+  "normal": "Menu_Champs_0214.png",
+  "shiny": "Menu_Champs_0214_shiny.png"
+ },
+ "Heracross-Mega": {
+  "dex": 214,
+  "normal": "Menu_Champs_0214-Mega.png",
+  "shiny": "Menu_Champs_0214-Mega_shiny.png"
+ },
+ "Hippowdon": {
+  "dex": 450,
+  "normal": "Menu_Champs_0450.png",
+  "shiny": "Menu_Champs_0450_shiny.png"
+ },
+ "Houndoom": {
+  "dex": 229,
+  "normal": "Menu_Champs_0229.png",
+  "shiny": "Menu_Champs_0229_shiny.png"
+ },
+ "Houndoom-Mega": {
+  "dex": 229,
+  "normal": "Menu_Champs_0229-Mega.png",
+  "shiny": "Menu_Champs_0229-Mega_shiny.png"
+ },
+ "Houndstone": {
+  "dex": 972,
+  "normal": "Menu_Champs_0972.png",
+  "shiny": "Menu_Champs_0972_shiny.png"
+ },
+ "Hydrapple": {
+  "dex": 1019,
+  "normal": "Menu_Champs_1019.png",
+  "shiny": "Menu_Champs_1019_shiny.png"
+ },
+ "Hydreigon": {
+  "dex": 635,
+  "normal": "Menu_Champs_0635.png",
+  "shiny": "Menu_Champs_0635_shiny.png"
+ },
+ "Incineroar": {
+  "dex": 727,
+  "normal": "Menu_Champs_0727.png",
+  "shiny": "Menu_Champs_0727_shiny.png"
+ },
+ "Indeedee": {
+  "dex": 876,
+  "normal": "Menu_Champs_0876.png",
+  "shiny": "Menu_Champs_0876_shiny.png"
+ },
+ "Indeedee-F": {
+  "dex": 876,
+  "normal": "Menu_Champs_0876-Female.png",
+  "shiny": "Menu_Champs_0876-Female_shiny.png"
+ },
+ "Infernape": {
+  "dex": 392,
+  "normal": "Menu_Champs_0392.png",
+  "shiny": "Menu_Champs_0392_shiny.png"
+ },
+ "Inteleon": {
+  "dex": 818,
+  "normal": "Menu_Champs_0818.png",
+  "shiny": "Menu_Champs_0818_shiny.png"
+ },
+ "Jolteon": {
+  "dex": 135,
+  "normal": "Menu_Champs_0135.png",
+  "shiny": "Menu_Champs_0135_shiny.png"
+ },
+ "Kangaskhan": {
+  "dex": 115,
+  "normal": "Menu_Champs_0115.png",
+  "shiny": "Menu_Champs_0115_shiny.png"
+ },
+ "Kangaskhan-Mega": {
+  "dex": 115,
+  "normal": "Menu_Champs_0115-Mega.png",
+  "shiny": "Menu_Champs_0115-Mega_shiny.png"
+ },
+ "Kingambit": {
+  "dex": 983,
+  "normal": "Menu_Champs_0983.png",
+  "shiny": "Menu_Champs_0983_shiny.png"
+ },
+ "Kleavor": {
+  "dex": 900,
+  "normal": "Menu_Champs_0900.png",
+  "shiny": "Menu_Champs_0900_shiny.png"
+ },
+ "Klefki": {
+  "dex": 707,
+  "normal": "Menu_Champs_0707.png",
+  "shiny": "Menu_Champs_0707_shiny.png"
+ },
+ "Kommo-o": {
+  "dex": 784,
+  "normal": "Menu_Champs_0784.png",
+  "shiny": "Menu_Champs_0784_shiny.png"
+ },
+ "Krookodile": {
+  "dex": 553,
+  "normal": "Menu_Champs_0553.png",
+  "shiny": "Menu_Champs_0553_shiny.png"
+ },
+ "Leafeon": {
+  "dex": 470,
+  "normal": "Menu_Champs_0470.png",
+  "shiny": "Menu_Champs_0470_shiny.png"
+ },
+ "Liepard": {
+  "dex": 510,
+  "normal": "Menu_Champs_0510.png",
+  "shiny": "Menu_Champs_0510_shiny.png"
+ },
+ "Lopunny": {
+  "dex": 428,
+  "normal": "Menu_Champs_0428.png",
+  "shiny": "Menu_Champs_0428_shiny.png"
+ },
+ "Lopunny-Mega": {
+  "dex": 428,
+  "normal": "Menu_Champs_0428-Mega.png",
+  "shiny": "Menu_Champs_0428-Mega_shiny.png"
+ },
+ "Lucario": {
+  "dex": 448,
+  "normal": "Menu_Champs_0448.png",
+  "shiny": "Menu_Champs_0448_shiny.png"
+ },
+ "Lucario-Mega": {
+  "dex": 448,
+  "normal": "Menu_Champs_0448-Mega.png",
+  "shiny": "Menu_Champs_0448-Mega_shiny.png"
+ },
+ "Lucario-Mega-Z": {
+  "dex": 448,
+  "normal": "Menu_Champs_0448-Mega_Z.png",
+  "shiny": "Menu_Champs_0448-Mega_Z_shiny.png"
+ },
+ "Luxray": {
+  "dex": 405,
+  "normal": "Menu_Champs_0405.png",
+  "shiny": "Menu_Champs_0405_shiny.png"
+ },
+ "Lycanroc": {
+  "dex": 745,
+  "normal": "Menu_Champs_0745.png",
+  "shiny": "Menu_Champs_0745_shiny.png"
+ },
+ "Lycanroc-Dusk": {
+  "dex": 745,
+  "normal": "Menu_Champs_0745-Dusk.png",
+  "shiny": "Menu_Champs_0745-Dusk_shiny.png"
+ },
+ "Lycanroc-Midnight": {
+  "dex": 745,
+  "normal": "Menu_Champs_0745-Midnight.png",
+  "shiny": "Menu_Champs_0745-Midnight_shiny.png"
+ },
+ "Mabosstiff": {
+  "dex": 943,
+  "normal": "Menu_Champs_0943.png",
+  "shiny": "Menu_Champs_0943_shiny.png"
+ },
+ "Machamp": {
+  "dex": 68,
+  "normal": "Menu_Champs_0068.png",
+  "shiny": "Menu_Champs_0068_shiny.png"
+ },
+ "Malamar": {
+  "dex": 687,
+  "normal": "Menu_Champs_0687.png",
+  "shiny": "Menu_Champs_0687_shiny.png"
+ },
+ "Malamar-Mega": {
+  "dex": 687,
+  "normal": "Menu_Champs_0687-Mega.png",
+  "shiny": "Menu_Champs_0687-Mega_shiny.png"
+ },
+ "Mamoswine": {
+  "dex": 473,
+  "normal": "Menu_Champs_0473.png",
+  "shiny": "Menu_Champs_0473_shiny.png"
+ },
+ "Manectric": {
+  "dex": 310,
+  "normal": "Menu_Champs_0310.png",
+  "shiny": "Menu_Champs_0310_shiny.png"
+ },
+ "Manectric-Mega": {
+  "dex": 310,
+  "normal": "Menu_Champs_0310-Mega.png",
+  "shiny": "Menu_Champs_0310-Mega_shiny.png"
+ },
+ "Maushold": {
+  "dex": 925,
+  "normal": "Menu_Champs_0925-Three.png",
+  "shiny": "Menu_Champs_0925-Three_shiny.png"
+ },
+ "Mawile": {
+  "dex": 303,
+  "normal": "Menu_Champs_0303.png",
+  "shiny": "Menu_Champs_0303_shiny.png"
+ },
+ "Mawile-Mega": {
+  "dex": 303,
+  "normal": "Menu_Champs_0303-Mega.png",
+  "shiny": "Menu_Champs_0303-Mega_shiny.png"
+ },
+ "Medicham": {
+  "dex": 308,
+  "normal": "Menu_Champs_0308.png",
+  "shiny": "Menu_Champs_0308_shiny.png"
+ },
+ "Medicham-Mega": {
+  "dex": 308,
+  "normal": "Menu_Champs_0308-Mega.png",
+  "shiny": "Menu_Champs_0308-Mega_shiny.png"
+ },
+ "Meganium": {
+  "dex": 154,
+  "normal": "Menu_Champs_0154.png",
+  "shiny": "Menu_Champs_0154_shiny.png"
+ },
+ "Meganium-Mega": {
+  "dex": 154,
+  "normal": "Menu_Champs_0154-Mega.png",
+  "shiny": "Menu_Champs_0154-Mega_shiny.png"
+ },
+ "Meowscarada": {
+  "dex": 908,
+  "normal": "Menu_Champs_0908.png",
+  "shiny": "Menu_Champs_0908_shiny.png"
+ },
+ "Meowstic": {
+  "dex": 678,
+  "normal": "Menu_Champs_0678.png",
+  "shiny": "Menu_Champs_0678_shiny.png"
+ },
+ "Meowstic-F": {
+  "dex": 678,
+  "normal": "Menu_Champs_0678-Female.png",
+  "shiny": "Menu_Champs_0678-Female_shiny.png"
+ },
+ "Meowstic-M-Mega": {
+  "dex": 678,
+  "normal": "Menu_Champs_0678-Mega.png",
+  "shiny": "Menu_Champs_0678-Mega_shiny.png"
+ },
+ "Metagross": {
+  "dex": 376,
+  "normal": "Menu_Champs_0376.png",
+  "shiny": "Menu_Champs_0376_shiny.png"
+ },
+ "Metagross-Mega": {
+  "dex": 376,
+  "normal": "Menu_Champs_0376-Mega.png",
+  "shiny": "Menu_Champs_0376-Mega_shiny.png"
+ },
+ "Milotic": {
+  "dex": 350,
+  "normal": "Menu_Champs_0350.png",
+  "shiny": "Menu_Champs_0350_shiny.png"
+ },
+ "Mimikyu": {
+  "dex": 778,
+  "normal": "Menu_Champs_0778.png",
+  "shiny": "Menu_Champs_0778_shiny.png"
+ },
+ "Morpeko": {
+  "dex": 877,
+  "normal": "Menu_Champs_0877.png",
+  "shiny": "Menu_Champs_0877_shiny.png"
+ },
+ "Morpeko-Hangry": {
+  "dex": 877,
+  "normal": "Menu_Champs_0877-Hangry.png",
+  "shiny": "Menu_Champs_0877-Hangry_shiny.png"
+ },
+ "Mr. Mime": {
+  "dex": 122,
+  "normal": "Menu_Champs_0122.png",
+  "shiny": "Menu_Champs_0122_shiny.png"
+ },
+ "Mr. Rime": {
+  "dex": 866,
+  "normal": "Menu_Champs_0866.png",
+  "shiny": "Menu_Champs_0866_shiny.png"
+ },
+ "Mudsdale": {
+  "dex": 750,
+  "normal": "Menu_Champs_0750.png",
+  "shiny": "Menu_Champs_0750_shiny.png"
+ },
+ "Musharna": {
+  "dex": 518,
+  "normal": "Menu_Champs_0518.png",
+  "shiny": "Menu_Champs_0518_shiny.png"
+ },
+ "Ninetales": {
+  "dex": 38,
+  "normal": "Menu_Champs_0038.png",
+  "shiny": "Menu_Champs_0038_shiny.png"
+ },
+ "Ninetales-Alola": {
+  "dex": 38,
+  "normal": "Menu_Champs_0038-Alola.png",
+  "shiny": "Menu_Champs_0038-Alola_shiny.png"
+ },
+ "Noivern": {
+  "dex": 715,
+  "normal": "Menu_Champs_0715.png",
+  "shiny": "Menu_Champs_0715_shiny.png"
+ },
+ "Oranguru": {
+  "dex": 765,
+  "normal": "Menu_Champs_0765.png",
+  "shiny": "Menu_Champs_0765_shiny.png"
+ },
+ "Orthworm": {
+  "dex": 968,
+  "normal": "Menu_Champs_0968.png",
+  "shiny": "Menu_Champs_0968_shiny.png"
+ },
+ "Overqwil": {
+  "dex": 904,
+  "normal": "Menu_Champs_0904.png",
+  "shiny": "Menu_Champs_0904_shiny.png"
+ },
+ "Palafin": {
+  "dex": 964,
+  "normal": "Menu_Champs_0964.png",
+  "shiny": "Menu_Champs_0964_shiny.png"
+ },
+ "Palafin-Hero": {
+  "dex": 964,
+  "normal": "Menu_Champs_0964-Hero.png",
+  "shiny": "Menu_Champs_0964-Hero_shiny.png"
+ },
+ "Pangoro": {
+  "dex": 675,
+  "normal": "Menu_Champs_0675.png",
+  "shiny": "Menu_Champs_0675_shiny.png"
+ },
+ "Passimian": {
+  "dex": 766,
+  "normal": "Menu_Champs_0766.png",
+  "shiny": "Menu_Champs_0766_shiny.png"
+ },
+ "Pawmot": {
+  "dex": 923,
+  "normal": "Menu_Champs_0923.png",
+  "shiny": "Menu_Champs_0923_shiny.png"
+ },
+ "Pelipper": {
+  "dex": 279,
+  "normal": "Menu_Champs_0279.png",
+  "shiny": "Menu_Champs_0279_shiny.png"
+ },
+ "Perrserker": {
+  "dex": 863,
+  "normal": "Menu_Champs_0863.png",
+  "shiny": "Menu_Champs_0863_shiny.png"
+ },
+ "Persian": {
+  "dex": 53,
+  "normal": "Menu_Champs_0053.png",
+  "shiny": "Menu_Champs_0053_shiny.png"
+ },
+ "Persian-Alola": {
+  "dex": 53,
+  "normal": "Menu_Champs_0053-Alola.png",
+  "shiny": "Menu_Champs_0053-Alola_shiny.png"
+ },
+ "Pidgeot": {
+  "dex": 18,
+  "normal": "Menu_Champs_0018.png",
+  "shiny": "Menu_Champs_0018_shiny.png"
+ },
+ "Pidgeot-Mega": {
+  "dex": 18,
+  "normal": "Menu_Champs_0018-Mega.png",
+  "shiny": "Menu_Champs_0018-Mega_shiny.png"
+ },
+ "Pikachu": {
+  "dex": 25,
+  "normal": "Menu_Champs_0025.png",
+  "shiny": "Menu_Champs_0025_shiny.png"
+ },
+ "Pincurchin": {
+  "dex": 871,
+  "normal": "Menu_Champs_0871.png",
+  "shiny": "Menu_Champs_0871_shiny.png"
+ },
+ "Pinsir": {
+  "dex": 127,
+  "normal": "Menu_Champs_0127.png",
+  "shiny": "Menu_Champs_0127_shiny.png"
+ },
+ "Pinsir-Mega": {
+  "dex": 127,
+  "normal": "Menu_Champs_0127-Mega.png",
+  "shiny": "Menu_Champs_0127-Mega_shiny.png"
+ },
+ "Politoed": {
+  "dex": 186,
+  "normal": "Menu_Champs_0186.png",
+  "shiny": "Menu_Champs_0186_shiny.png"
+ },
+ "Polteageist": {
+  "dex": 855,
+  "normal": "Menu_Champs_0855.png",
+  "shiny": "Menu_Champs_0855_shiny.png"
+ },
+ "Primarina": {
+  "dex": 730,
+  "normal": "Menu_Champs_0730.png",
+  "shiny": "Menu_Champs_0730_shiny.png"
+ },
+ "Pyroar": {
+  "dex": 668,
+  "normal": "Menu_Champs_0668-Female.png",
+  "shiny": "Menu_Champs_0668-Female_shiny.png"
+ },
+ "Pyroar-Mega": {
+  "dex": 668,
+  "normal": "Menu_Champs_0668-Mega.png",
+  "shiny": "Menu_Champs_0668-Mega_shiny.png"
+ },
+ "Quaquaval": {
+  "dex": 914,
+  "normal": "Menu_Champs_0914.png",
+  "shiny": "Menu_Champs_0914_shiny.png"
+ },
+ "Qwilfish": {
+  "dex": 211,
+  "normal": "Menu_Champs_0211.png",
+  "shiny": "Menu_Champs_0211_shiny.png"
+ },
+ "Raichu": {
+  "dex": 26,
+  "normal": "Menu_Champs_0026.png",
+  "shiny": "Menu_Champs_0026_shiny.png"
+ },
+ "Raichu-Alola": {
+  "dex": 26,
+  "normal": "Menu_Champs_0026-Alola.png",
+  "shiny": "Menu_Champs_0026-Alola_shiny.png"
+ },
+ "Raichu-Mega-X": {
+  "dex": 26,
+  "normal": "Menu_Champs_0026-Mega_X.png",
+  "shiny": "Menu_Champs_0026-Mega_X_shiny.png"
+ },
+ "Raichu-Mega-Y": {
+  "dex": 26,
+  "normal": "Menu_Champs_0026-Mega_Y.png",
+  "shiny": "Menu_Champs_0026-Mega_Y_shiny.png"
+ },
+ "Rampardos": {
+  "dex": 409,
+  "normal": "Menu_Champs_0409.png",
+  "shiny": "Menu_Champs_0409_shiny.png"
+ },
+ "Reuniclus": {
+  "dex": 579,
+  "normal": "Menu_Champs_0579.png",
+  "shiny": "Menu_Champs_0579_shiny.png"
+ },
+ "Rhyperior": {
+  "dex": 464,
+  "normal": "Menu_Champs_0464.png",
+  "shiny": "Menu_Champs_0464_shiny.png"
+ },
+ "Rillaboom": {
+  "dex": 812,
+  "normal": "Menu_Champs_0812.png",
+  "shiny": "Menu_Champs_0812_shiny.png"
+ },
+ "Roserade": {
+  "dex": 407,
+  "normal": "Menu_Champs_0407.png",
+  "shiny": "Menu_Champs_0407_shiny.png"
+ },
+ "Rotom": {
+  "dex": 479,
+  "normal": "Menu_Champs_0479.png",
+  "shiny": "Menu_Champs_0479_shiny.png"
+ },
+ "Rotom-Fan": {
+  "dex": 479,
+  "normal": "Menu_Champs_0479-Fan.png",
+  "shiny": "Menu_Champs_0479-Fan_shiny.png"
+ },
+ "Rotom-Frost": {
+  "dex": 479,
+  "normal": "Menu_Champs_0479-Frost.png",
+  "shiny": "Menu_Champs_0479-Frost_shiny.png"
+ },
+ "Rotom-Heat": {
+  "dex": 479,
+  "normal": "Menu_Champs_0479-Heat.png",
+  "shiny": "Menu_Champs_0479-Heat_shiny.png"
+ },
+ "Rotom-Mow": {
+  "dex": 479,
+  "normal": "Menu_Champs_0479-Mow.png",
+  "shiny": "Menu_Champs_0479-Mow_shiny.png"
+ },
+ "Rotom-Wash": {
+  "dex": 479,
+  "normal": "Menu_Champs_0479-Wash.png",
+  "shiny": "Menu_Champs_0479-Wash_shiny.png"
+ },
+ "Runerigus": {
+  "dex": 867,
+  "normal": "Menu_Champs_0867.png",
+  "shiny": "Menu_Champs_0867_shiny.png"
+ },
+ "Sableye": {
+  "dex": 302,
+  "normal": "Menu_Champs_0302.png",
+  "shiny": "Menu_Champs_0302_shiny.png"
+ },
+ "Sableye-Mega": {
+  "dex": 302,
+  "normal": "Menu_Champs_0302-Mega.png",
+  "shiny": "Menu_Champs_0302-Mega_shiny.png"
+ },
+ "Salamence": {
+  "dex": 373,
+  "normal": "Menu_Champs_0373.png",
+  "shiny": "Menu_Champs_0373_shiny.png"
+ },
+ "Salamence-Mega": {
+  "dex": 373,
+  "normal": "Menu_Champs_0373-Mega.png",
+  "shiny": "Menu_Champs_0373-Mega_shiny.png"
+ },
+ "Salazzle": {
+  "dex": 758,
+  "normal": "Menu_Champs_0758.png",
+  "shiny": "Menu_Champs_0758_shiny.png"
+ },
+ "Samurott": {
+  "dex": 503,
+  "normal": "Menu_Champs_0503.png",
+  "shiny": "Menu_Champs_0503_shiny.png"
+ },
+ "Samurott-Hisui": {
+  "dex": 503,
+  "normal": "Menu_Champs_0503-Hisui.png",
+  "shiny": "Menu_Champs_0503-Hisui_shiny.png"
+ },
+ "Sandaconda": {
+  "dex": 844,
+  "normal": "Menu_Champs_0844.png",
+  "shiny": "Menu_Champs_0844_shiny.png"
+ },
+ "Sceptile": {
+  "dex": 254,
+  "normal": "Menu_Champs_0254.png",
+  "shiny": "Menu_Champs_0254_shiny.png"
+ },
+ "Sceptile-Mega": {
+  "dex": 254,
+  "normal": "Menu_Champs_0254-Mega.png",
+  "shiny": "Menu_Champs_0254-Mega_shiny.png"
+ },
+ "Scizor": {
+  "dex": 212,
+  "normal": "Menu_Champs_0212.png",
+  "shiny": "Menu_Champs_0212_shiny.png"
+ },
+ "Scizor-Mega": {
+  "dex": 212,
+  "normal": "Menu_Champs_0212-Mega.png",
+  "shiny": "Menu_Champs_0212-Mega_shiny.png"
+ },
+ "Scolipede": {
+  "dex": 545,
+  "normal": "Menu_Champs_0545.png",
+  "shiny": "Menu_Champs_0545_shiny.png"
+ },
+ "Scolipede-Mega": {
+  "dex": 545,
+  "normal": "Menu_Champs_0545-Mega.png",
+  "shiny": "Menu_Champs_0545-Mega_shiny.png"
+ },
+ "Scovillain": {
+  "dex": 952,
+  "normal": "Menu_Champs_0952.png",
+  "shiny": "Menu_Champs_0952_shiny.png"
+ },
+ "Scovillain-Mega": {
+  "dex": 952,
+  "normal": "Menu_Champs_0952-Mega.png",
+  "shiny": "Menu_Champs_0952-Mega_shiny.png"
+ },
+ "Scrafty": {
+  "dex": 560,
+  "normal": "Menu_Champs_0560.png",
+  "shiny": "Menu_Champs_0560_shiny.png"
+ },
+ "Scrafty-Mega": {
+  "dex": 560,
+  "normal": "Menu_Champs_0560-Mega.png",
+  "shiny": "Menu_Champs_0560-Mega_shiny.png"
+ },
+ "Serperior": {
+  "dex": 497,
+  "normal": "Menu_Champs_0497.png",
+  "shiny": "Menu_Champs_0497_shiny.png"
+ },
+ "Sharpedo": {
+  "dex": 319,
+  "normal": "Menu_Champs_0319.png",
+  "shiny": "Menu_Champs_0319_shiny.png"
+ },
+ "Sharpedo-Mega": {
+  "dex": 319,
+  "normal": "Menu_Champs_0319-Mega.png",
+  "shiny": "Menu_Champs_0319-Mega_shiny.png"
+ },
+ "Simipour": {
+  "dex": 516,
+  "normal": "Menu_Champs_0516.png",
+  "shiny": "Menu_Champs_0516_shiny.png"
+ },
+ "Simisage": {
+  "dex": 512,
+  "normal": "Menu_Champs_0512.png",
+  "shiny": "Menu_Champs_0512_shiny.png"
+ },
+ "Simisear": {
+  "dex": 514,
+  "normal": "Menu_Champs_0514.png",
+  "shiny": "Menu_Champs_0514_shiny.png"
+ },
+ "Sinistcha": {
+  "dex": 1013,
+  "normal": "Menu_Champs_1013.png",
+  "shiny": "Menu_Champs_1013_shiny.png"
+ },
+ "Sirfetch’d": {
+  "dex": 865,
+  "normal": "Menu_Champs_0865.png",
+  "shiny": "Menu_Champs_0865_shiny.png"
+ },
+ "Skarmory": {
+  "dex": 227,
+  "normal": "Menu_Champs_0227.png",
+  "shiny": "Menu_Champs_0227_shiny.png"
+ },
+ "Skarmory-Mega": {
+  "dex": 227,
+  "normal": "Menu_Champs_0227-Mega.png",
+  "shiny": "Menu_Champs_0227-Mega_shiny.png"
+ },
+ "Skeledirge": {
+  "dex": 911,
+  "normal": "Menu_Champs_0911.png",
+  "shiny": "Menu_Champs_0911_shiny.png"
+ },
+ "Slowbro": {
+  "dex": 80,
+  "normal": "Menu_Champs_0080.png",
+  "shiny": "Menu_Champs_0080_shiny.png"
+ },
+ "Slowbro-Galar": {
+  "dex": 80,
+  "normal": "Menu_Champs_0080-Galar.png",
+  "shiny": "Menu_Champs_0080-Galar_shiny.png"
+ },
+ "Slowbro-Mega": {
+  "dex": 80,
+  "normal": "Menu_Champs_0080-Mega.png",
+  "shiny": "Menu_Champs_0080-Mega_shiny.png"
+ },
+ "Slowking": {
+  "dex": 199,
+  "normal": "Menu_Champs_0199.png",
+  "shiny": "Menu_Champs_0199_shiny.png"
+ },
+ "Slowking-Galar": {
+  "dex": 199,
+  "normal": "Menu_Champs_0199-Galar.png",
+  "shiny": "Menu_Champs_0199-Galar_shiny.png"
+ },
+ "Slurpuff": {
+  "dex": 685,
+  "normal": "Menu_Champs_0685.png",
+  "shiny": "Menu_Champs_0685_shiny.png"
+ },
+ "Sneasler": {
+  "dex": 903,
+  "normal": "Menu_Champs_0903.png",
+  "shiny": "Menu_Champs_0903_shiny.png"
+ },
+ "Snorlax": {
+  "dex": 143,
+  "normal": "Menu_Champs_0143.png",
+  "shiny": "Menu_Champs_0143_shiny.png"
+ },
+ "Spiritomb": {
+  "dex": 442,
+  "normal": "Menu_Champs_0442.png",
+  "shiny": "Menu_Champs_0442_shiny.png"
+ },
+ "Squawkabilly": {
+  "dex": 931,
+  "normal": "Menu_Champs_0931.png",
+  "shiny": "Menu_Champs_0931_shiny.png"
+ },
+ "Squawkabilly-Blue": {
+  "dex": 931,
+  "normal": "Menu_Champs_0931-Blue.png",
+  "shiny": "Menu_Champs_0931-Blue_shiny.png"
+ },
+ "Squawkabilly-White": {
+  "dex": 931,
+  "normal": "Menu_Champs_0931-White.png",
+  "shiny": "Menu_Champs_0931-White_shiny.png"
+ },
+ "Squawkabilly-Yellow": {
+  "dex": 931,
+  "normal": "Menu_Champs_0931-Yellow.png",
+  "shiny": "Menu_Champs_0931-Yellow_shiny.png"
+ },
+ "Staraptor": {
+  "dex": 398,
+  "normal": "Menu_Champs_0398.png",
+  "shiny": "Menu_Champs_0398_shiny.png"
+ },
+ "Staraptor-Mega": {
+  "dex": 398,
+  "normal": "Menu_Champs_0398-Mega.png",
+  "shiny": "Menu_Champs_0398-Mega_shiny.png"
+ },
+ "Starmie": {
+  "dex": 121,
+  "normal": "Menu_Champs_0121.png",
+  "shiny": "Menu_Champs_0121_shiny.png"
+ },
+ "Starmie-Mega": {
+  "dex": 121,
+  "normal": "Menu_Champs_0121-Mega.png",
+  "shiny": "Menu_Champs_0121-Mega_shiny.png"
+ },
+ "Steelix": {
+  "dex": 208,
+  "normal": "Menu_Champs_0208.png",
+  "shiny": "Menu_Champs_0208_shiny.png"
+ },
+ "Steelix-Mega": {
+  "dex": 208,
+  "normal": "Menu_Champs_0208-Mega.png",
+  "shiny": "Menu_Champs_0208-Mega_shiny.png"
+ },
+ "Stunfisk": {
+  "dex": 618,
+  "normal": "Menu_Champs_0618.png",
+  "shiny": "Menu_Champs_0618_shiny.png"
+ },
+ "Stunfisk-Galar": {
+  "dex": 618,
+  "normal": "Menu_Champs_0618-Galar.png",
+  "shiny": "Menu_Champs_0618-Galar_shiny.png"
+ },
+ "Swalot": {
+  "dex": 317,
+  "normal": "Menu_Champs_0317.png",
+  "shiny": "Menu_Champs_0317_shiny.png"
+ },
+ "Swampert": {
+  "dex": 260,
+  "normal": "Menu_Champs_0260.png",
+  "shiny": "Menu_Champs_0260_shiny.png"
+ },
+ "Swampert-Mega": {
+  "dex": 260,
+  "normal": "Menu_Champs_0260-Mega.png",
+  "shiny": "Menu_Champs_0260-Mega_shiny.png"
+ },
+ "Sylveon": {
+  "dex": 700,
+  "normal": "Menu_Champs_0700.png",
+  "shiny": "Menu_Champs_0700_shiny.png"
+ },
+ "Talonflame": {
+  "dex": 663,
+  "normal": "Menu_Champs_0663.png",
+  "shiny": "Menu_Champs_0663_shiny.png"
+ },
+ "Tauros": {
+  "dex": 128,
+  "normal": "Menu_Champs_0128.png",
+  "shiny": "Menu_Champs_0128_shiny.png"
+ },
+ "Tauros-Paldea-Aqua": {
+  "dex": 128,
+  "normal": "Menu_Champs_0128-Paldea_Aqua.png",
+  "shiny": "Menu_Champs_0128-Paldea_Aqua_shiny.png"
+ },
+ "Tauros-Paldea-Blaze": {
+  "dex": 128,
+  "normal": "Menu_Champs_0128-Paldea_Blaze.png",
+  "shiny": "Menu_Champs_0128-Paldea_Blaze_shiny.png"
+ },
+ "Tauros-Paldea-Combat": {
+  "dex": 128,
+  "normal": "Menu_Champs_0128-Paldea_Combat.png",
+  "shiny": "Menu_Champs_0128-Paldea_Combat_shiny.png"
+ },
+ "Thievul": {
+  "dex": 828,
+  "normal": "Menu_Champs_0828.png",
+  "shiny": "Menu_Champs_0828_shiny.png"
+ },
+ "Tinkaton": {
+  "dex": 959,
+  "normal": "Menu_Champs_0959.png",
+  "shiny": "Menu_Champs_0959_shiny.png"
+ },
+ "Torkoal": {
+  "dex": 324,
+  "normal": "Menu_Champs_0324.png",
+  "shiny": "Menu_Champs_0324_shiny.png"
+ },
+ "Torterra": {
+  "dex": 389,
+  "normal": "Menu_Champs_0389.png",
+  "shiny": "Menu_Champs_0389_shiny.png"
+ },
+ "Toucannon": {
+  "dex": 733,
+  "normal": "Menu_Champs_0733.png",
+  "shiny": "Menu_Champs_0733_shiny.png"
+ },
+ "Toxapex": {
+  "dex": 748,
+  "normal": "Menu_Champs_0748.png",
+  "shiny": "Menu_Champs_0748_shiny.png"
+ },
+ "Toxicroak": {
+  "dex": 454,
+  "normal": "Menu_Champs_0454.png",
+  "shiny": "Menu_Champs_0454_shiny.png"
+ },
+ "Toxtricity": {
+  "dex": 849,
+  "normal": "Menu_Champs_0849.png",
+  "shiny": "Menu_Champs_0849_shiny.png"
+ },
+ "Toxtricity-Low-Key": {
+  "dex": 849,
+  "normal": "Menu_Champs_0849-Low_Key.png",
+  "shiny": "Menu_Champs_0849-Low_Key_shiny.png"
+ },
+ "Trevenant": {
+  "dex": 709,
+  "normal": "Menu_Champs_0709.png",
+  "shiny": "Menu_Champs_0709_shiny.png"
+ },
+ "Tsareena": {
+  "dex": 763,
+  "normal": "Menu_Champs_0763.png",
+  "shiny": "Menu_Champs_0763_shiny.png"
+ },
+ "Typhlosion": {
+  "dex": 157,
+  "normal": "Menu_Champs_0157.png",
+  "shiny": "Menu_Champs_0157_shiny.png"
+ },
+ "Typhlosion-Hisui": {
+  "dex": 157,
+  "normal": "Menu_Champs_0157-Hisui.png",
+  "shiny": "Menu_Champs_0157-Hisui_shiny.png"
+ },
+ "Tyranitar": {
+  "dex": 248,
+  "normal": "Menu_Champs_0248.png",
+  "shiny": "Menu_Champs_0248_shiny.png"
+ },
+ "Tyranitar-Mega": {
+  "dex": 248,
+  "normal": "Menu_Champs_0248-Mega.png",
+  "shiny": "Menu_Champs_0248-Mega_shiny.png"
+ },
+ "Tyrantrum": {
+  "dex": 697,
+  "normal": "Menu_Champs_0697.png",
+  "shiny": "Menu_Champs_0697_shiny.png"
+ },
+ "Umbreon": {
+  "dex": 197,
+  "normal": "Menu_Champs_0197.png",
+  "shiny": "Menu_Champs_0197_shiny.png"
+ },
+ "Vanilluxe": {
+  "dex": 584,
+  "normal": "Menu_Champs_0584.png",
+  "shiny": "Menu_Champs_0584_shiny.png"
+ },
+ "Vaporeon": {
+  "dex": 134,
+  "normal": "Menu_Champs_0134.png",
+  "shiny": "Menu_Champs_0134_shiny.png"
+ },
+ "Venusaur": {
+  "dex": 3,
+  "normal": "Menu_Champs_0003.png",
+  "shiny": "Menu_Champs_0003_shiny.png"
+ },
+ "Venusaur-Mega": {
+  "dex": 3,
+  "normal": "Menu_Champs_0003-Mega.png",
+  "shiny": "Menu_Champs_0003-Mega_shiny.png"
+ },
+ "Victreebel": {
+  "dex": 71,
+  "normal": "Menu_Champs_0071.png",
+  "shiny": "Menu_Champs_0071_shiny.png"
+ },
+ "Victreebel-Mega": {
+  "dex": 71,
+  "normal": "Menu_Champs_0071-Mega.png",
+  "shiny": "Menu_Champs_0071-Mega_shiny.png"
+ },
+ "Vileplume": {
+  "dex": 45,
+  "normal": "Menu_Champs_0045.png",
+  "shiny": "Menu_Champs_0045_shiny.png"
+ },
+ "Vivillon": {
+  "dex": 666,
+  "normal": "Menu_Champs_0666.png",
+  "shiny": "Menu_Champs_0666_shiny.png"
+ },
+ "Vivillon-Archipelago": {
+  "dex": 666,
+  "normal": "Menu_Champs_0666-Archipelago.png",
+  "shiny": "Menu_Champs_0666-Archipelago_shiny.png"
+ },
+ "Vivillon-Continental": {
+  "dex": 666,
+  "normal": "Menu_Champs_0666-Continental.png",
+  "shiny": "Menu_Champs_0666-Continental_shiny.png"
+ },
+ "Vivillon-Elegant": {
+  "dex": 666,
+  "normal": "Menu_Champs_0666-Elegant.png",
+  "shiny": "Menu_Champs_0666-Elegant_shiny.png"
+ },
+ "Vivillon-Fancy": {
+  "dex": 666,
+  "normal": "Menu_Champs_0666-Fancy.png",
+  "shiny": "Menu_Champs_0666-Fancy_shiny.png"
+ },
+ "Vivillon-Garden": {
+  "dex": 666,
+  "normal": "Menu_Champs_0666-Garden.png",
+  "shiny": "Menu_Champs_0666-Garden_shiny.png"
+ },
+ "Vivillon-High Plains": {
+  "dex": 666,
+  "normal": "Menu_Champs_0666-High_Plains.png",
+  "shiny": "Menu_Champs_0666-High_Plains_shiny.png"
+ },
+ "Vivillon-Icy Snow": {
+  "dex": 666,
+  "normal": "Menu_Champs_0666-Icy_Snow.png",
+  "shiny": "Menu_Champs_0666-Icy_Snow_shiny.png"
+ },
+ "Vivillon-Jungle": {
+  "dex": 666,
+  "normal": "Menu_Champs_0666-Jungle.png",
+  "shiny": "Menu_Champs_0666-Jungle_shiny.png"
+ },
+ "Vivillon-Marine": {
+  "dex": 666,
+  "normal": "Menu_Champs_0666-Marine.png",
+  "shiny": "Menu_Champs_0666-Marine_shiny.png"
+ },
+ "Vivillon-Modern": {
+  "dex": 666,
+  "normal": "Menu_Champs_0666-Modern.png",
+  "shiny": "Menu_Champs_0666-Modern_shiny.png"
+ },
+ "Vivillon-Monsoon": {
+  "dex": 666,
+  "normal": "Menu_Champs_0666-Monsoon.png",
+  "shiny": "Menu_Champs_0666-Monsoon_shiny.png"
+ },
+ "Vivillon-Ocean": {
+  "dex": 666,
+  "normal": "Menu_Champs_0666-Ocean.png",
+  "shiny": "Menu_Champs_0666-Ocean_shiny.png"
+ },
+ "Vivillon-Pokeball": {
+  "dex": 666,
+  "normal": "Menu_Champs_0666-Poké_Ball.png",
+  "shiny": "Menu_Champs_0666-Poké_Ball_shiny.png"
+ },
+ "Vivillon-Polar": {
+  "dex": 666,
+  "normal": "Menu_Champs_0666-Polar.png",
+  "shiny": "Menu_Champs_0666-Polar_shiny.png"
+ },
+ "Vivillon-River": {
+  "dex": 666,
+  "normal": "Menu_Champs_0666-River.png",
+  "shiny": "Menu_Champs_0666-River_shiny.png"
+ },
+ "Vivillon-Sandstorm": {
+  "dex": 666,
+  "normal": "Menu_Champs_0666-Sandstorm.png",
+  "shiny": "Menu_Champs_0666-Sandstorm_shiny.png"
+ },
+ "Vivillon-Savanna": {
+  "dex": 666,
+  "normal": "Menu_Champs_0666-Savanna.png",
+  "shiny": "Menu_Champs_0666-Savanna_shiny.png"
+ },
+ "Vivillon-Sun": {
+  "dex": 666,
+  "normal": "Menu_Champs_0666-Sun.png",
+  "shiny": "Menu_Champs_0666-Sun_shiny.png"
+ },
+ "Vivillon-Tundra": {
+  "dex": 666,
+  "normal": "Menu_Champs_0666-Tundra.png",
+  "shiny": "Menu_Champs_0666-Tundra_shiny.png"
+ },
+ "Volcarona": {
+  "dex": 637,
+  "normal": "Menu_Champs_0637.png",
+  "shiny": "Menu_Champs_0637_shiny.png"
+ },
+ "Watchog": {
+  "dex": 505,
+  "normal": "Menu_Champs_0505.png",
+  "shiny": "Menu_Champs_0505_shiny.png"
+ },
+ "Weavile": {
+  "dex": 461,
+  "normal": "Menu_Champs_0461.png",
+  "shiny": "Menu_Champs_0461_shiny.png"
+ },
+ "Whimsicott": {
+  "dex": 547,
+  "normal": "Menu_Champs_0547.png",
+  "shiny": "Menu_Champs_0547_shiny.png"
+ },
+ "Wigglytuff": {
+  "dex": 40,
+  "normal": "Menu_Champs_0040.png",
+  "shiny": "Menu_Champs_0040_shiny.png"
+ },
+ "Wyrdeer": {
+  "dex": 899,
+  "normal": "Menu_Champs_0899.png",
+  "shiny": "Menu_Champs_0899_shiny.png"
+ },
+ "Zoroark": {
+  "dex": 571,
+  "normal": "Menu_Champs_0571.png",
+  "shiny": "Menu_Champs_0571_shiny.png"
+ },
+ "Zoroark-Hisui": {
+  "dex": 571,
+  "normal": "Menu_Champs_0571-Hisui.png",
+  "shiny": "Menu_Champs_0571-Hisui_shiny.png"
+ }
+}

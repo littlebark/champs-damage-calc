@@ -209,6 +209,23 @@ val syncDamageAssets by tasks.registering(Sync::class) {
     into(layout.buildDirectory.dir("generated/recognitionAssets/damage"))
 }
 
+/** 冠军百科数据（招式/特性/持有物描述 + 持有物图标），来自 gamewith 冠军工具离线页。 */
+val syncCodexAssets by tasks.registering(Sync::class) {
+    from(rootProject.file("../src/data/codex")) {
+        include("*.json")
+        include("item-icons/*.png")
+    }
+    into(layout.buildDirectory.dir("generated/recognitionAssets/codex"))
+}
+
+/** Champions 菜单图标（形态识别 / 图鉴用）：786 张 PNG + showdownId 索引。 */
+val syncSpriteAssets by tasks.registering(Sync::class) {
+    from(rootProject.file("../src/data/pokemon-icons/champions-menu-sprites")) {
+        include("*.png", "sprite-index.json")
+    }
+    into(layout.buildDirectory.dir("generated/recognitionAssets/sprites"))
+}
+
 val validateTeamCodeEntityMap by tasks.registering {
     val teamCodeEntityMapFile = rootProject.file(
         "../tools/team-code-resolver/data/champions-entity-map.v18.json",
@@ -262,6 +279,8 @@ tasks.named("preBuild").configure {
     dependsOn(syncReleaseMetadata)
     dependsOn(syncRecognitionAssets)
     dependsOn(syncDamageAssets)
+    dependsOn(syncSpriteAssets)
+    dependsOn(syncCodexAssets)
     dependsOn(syncLegalAssets)
     dependsOn(syncTeamCodeAssets)
 }

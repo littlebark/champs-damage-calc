@@ -245,12 +245,6 @@ object TeamRepository {
         return parseTeam(json, userSaved = true)
     }
 
-    /** 识别队伍成功后，把这 6 只合并进「我的宝可梦」。 */
-    fun upsertTeamIntoMyPokemon(context: Context, savedTeamId: String) {
-        val team = load(context).firstOrNull { it.id == savedTeamId } ?: return
-        upsertMyPokemon(context, team.pokemon)
-    }
-
     fun load(context: Context): List<SavedTeam> {
         val privateDirectory = context.filesDir.resolve("saved-teams")
         val saved = privateDirectory.listFiles { file -> file.isFile && file.extension == "json" }
@@ -265,81 +259,6 @@ object TeamRepository {
             }
         return saved.distinctBy(SavedTeam::id)
     }
-
-    fun rename(context: Context, savedTeamId: String, newName: String) {
-        val name = newName.trim()
-        require(name.isNotEmpty()) { "队伍名称不能为空" }
-        require(name.length <= 30) { "队伍名称不能超过 30 个字符" }
-        val file = findTeamFile(context, savedTeamId) ?: error("找不到要重命名的队伍")
-        val json = JSONObject(file.readText(Charsets.UTF_8)).apply {
-            put("teamName", name)
-            put("teamSlotName", name)
-            put("updatedAt", Instant.now().toString())
-        }
-        file.writeUtf8Atomically(json.toString(2))
-    }
-
-    fun saveShowdownTeam(context: Context, teamName: String, pokemon: List<PokemonConfig>): SavedTeam {
-        require(teamName.trim().length in 1..30) { "队伍名称需要 1–30 个字符" }
-        require(pokemon.size in 1..6 && pokemon.all(PokemonConfig::isDamageReady)) { "PS 队伍配置不完整" }
-        val json = createImportedTeamJson("ps-${UUID.randomUUID()}", teamName.trim(), "", null, pokemon, Instant.now()).apply {
-            put("importSource", "SHOWDOWN")
-            put("source", JSONObject().put("backend", "showdown_text"))
-        }
-        context.filesDir.resolve("saved-teams").resolve("${json.getString("savedTeamId")}.json")
-            .writeUtf8Atomically(json.toString(2))
-        return parseTeam(json, userSaved = true)
-    }
-
-    fun updatePokemon(context: Context, savedTeamId: String, slot: Int, config: PokemonConfig) {
-        val file = findTeamFile(context, savedTeamId) ?: error("找不到要调整的队伍")
-        val json = JSONObject(file.readText(Charsets.UTF_8))
-        val members = json.optJSONArray("pokemon") ?: json.optJSONArray("members")
-            ?: error("队伍文件缺少宝可梦列表")
-        require(slot in 0 until members.length()) { "队伍槽位无效" }
-        val existing = members.getJSONObject(slot)
-        if (existing.has("build")) existing.put("build", config.toSavedJson())
-        else members.put(slot, config.toSavedJson())
-
-        val parsedMembers = (0 until members.length()).map { index ->
-            val member = members.getJSONObject(index)
-            parsePokemon(member.optJSONObject("build") ?: member)
-        }
-        val ready = parsedMembers.all(PokemonConfig::isDamageReady)
-        json.apply {
-            put("speciesSummary", parsedMembers.joinToString(" / ") { it.species.displayName })
-            put("damageReady", ready)
-            put(
-                "importStatus",
-                if (ready) "DAMAGE_READY" else "INCOMPLETE",
-            )
-            put("userConfirmed", true)
-            put("updatedAt", Instant.now().toString())
-        }
-        file.writeUtf8Atomically(json.toString(2))
-    }
-
-    fun delete(context: Context, savedTeamId: String) {
-        val file = findTeamFile(context, savedTeamId) ?: error("找不到要删除的队伍")
-        check(file.delete()) { "删除队伍失败" }
-        val sessionFile = context.filesDir.resolve("battle-session").resolve("current-battle-session.json")
-        if (sessionFile.isFile) {
-            val selectedTeamId = runCatching {
-                JSONObject(sessionFile.readText(Charsets.UTF_8)).optString("selectedOwnTeamId")
-            }.getOrNull()
-            if (selectedTeamId == savedTeamId) sessionFile.delete()
-        }
-    }
-
-    private fun findTeamFile(context: Context, savedTeamId: String) =
-        context.filesDir.resolve("saved-teams")
-            .listFiles { candidate -> candidate.isFile && candidate.extension == "json" }
-            .orEmpty()
-            .firstOrNull { candidate ->
-                runCatching {
-                    JSONObject(candidate.readText(Charsets.UTF_8)).optString("savedTeamId") == savedTeamId
-                }.getOrDefault(false)
-            }
 
     internal fun parseTeam(json: JSONObject, userSaved: Boolean): SavedTeam {
         val members = json.optJSONArray("pokemon") ?: json.getJSONArray("members")
@@ -404,52 +323,6 @@ object TeamRepository {
             spe = value("spe"),
         )
     }
-}
-
-internal fun createImportedTeamJson(
-    savedTeamId: String,
-    teamName: String,
-    publicCode: String,
-    trainerName: String?,
-    pokemon: List<PokemonConfig>,
-    now: Instant,
-): JSONObject = JSONObject().apply {
-    put("schemaVersion", 1)
-    put("kind", "SavedOwnTeam")
-    put("savedTeamId", savedTeamId)
-    put("teamName", teamName)
-    put("teamSlotName", teamName)
-    put("status", "DAMAGE_READY")
-    put("importStatus", "DAMAGE_READY")
-    put("importSource", "TEAM_CODE")
-    put("damageReady", true)
-    put("userConfirmed", true)
-    put("generatedAt", now.toString())
-    put("createdAt", now.toString())
-    put("updatedAt", now.toString())
-    put("source", JSONObject().apply {
-        put("backend", "pokemon_champions_official_api")
-        put("publicCode", publicCode)
-        trainerName?.trim()?.takeIf(String::isNotBlank)?.let { put("trainerName", it) }
-    })
-    put("members", JSONArray().apply {
-        pokemon.forEachIndexed { index, config ->
-            put(JSONObject().apply {
-                put("slotIndex", index)
-                put("species", config.species.toJson())
-                put("level", config.level)
-                put("actualStats", config.actualStats.toJson())
-                put("statPoints", config.statPoints.toJson(includeZero = true))
-                config.statAlignment?.let { put("statAlignment", it.toJson()) }
-                config.ability?.let { put("ability", it.toJson()) }
-                config.item?.let { put("item", it.toJson()) }
-                put("moves", JSONArray().apply { config.moves.forEach { put(it.entity.toJson()) } })
-                put("build", config.toSavedJson())
-                put("warnings", JSONArray())
-            })
-        }
-    })
-    put("warnings", JSONArray())
 }
 
 fun buildDamageRequest(
@@ -581,18 +454,19 @@ private fun exactDefenderProfile(build: JSONObject) = JSONObject().apply {
  * 3) HP +32 + 防御 +32 + 防御性格 ×1.1（物理招）；4) HP +32 + 特防 +32 + 特防性格 ×1.1（特殊招）。
  * 展示时按招式物理/特殊在 3、4 档中自动取一。
  */
-internal fun tierDefenderProfileSet(species: JSONObject): JSONObject = JSONObject().apply {
+internal fun tierDefenderProfileSet(species: JSONObject, stages: JSONObject = JSONObject()): JSONObject = JSONObject().apply {
     put("defenderSpecies", species)
     put("selectedProfileId", TIER_PROFILE_HP2)
     put("profiles", JSONArray().apply {
-        put(tierProfile(TIER_PROFILE_HP2, "对手 HP+2，其余 0，性格中性", JSONObject().put("hp", 2), null))
-        put(tierProfile(TIER_PROFILE_HP32, "对手 HP+32，其余 0，性格中性", JSONObject().put("hp", 32), null))
+        put(tierProfile(TIER_PROFILE_HP2, "对手 HP+2，其余 0，性格中性", JSONObject().put("hp", 2), null, stages))
+        put(tierProfile(TIER_PROFILE_HP32, "对手 HP+32，其余 0，性格中性", JSONObject().put("hp", 32), null, stages))
         put(
             tierProfile(
                 TIER_PROFILE_PHYSICAL,
                 "对手 HP+32、防御+32、防御性格 ×1.1",
                 JSONObject().put("hp", 32).put("def", 32),
                 natureEntity("Bold", "大胆"),
+                stages,
             ),
         )
         put(
@@ -601,6 +475,7 @@ internal fun tierDefenderProfileSet(species: JSONObject): JSONObject = JSONObjec
                 "对手 HP+32、特防+32、特防性格 ×1.1",
                 JSONObject().put("hp", 32).put("spd", 32),
                 natureEntity("Calm", "温和"),
+                stages,
             ),
         )
     })
@@ -616,6 +491,7 @@ private fun tierProfile(
     name: String,
     statPoints: JSONObject,
     nature: JSONObject?,
+    stages: JSONObject = JSONObject(),
 ): JSONObject = JSONObject().apply {
     put("profileId", id)
     put("profileName", name)
@@ -623,6 +499,7 @@ private fun tierProfile(
     put("level", 50)
     put("statPoints", statPoints)
     nature?.let { put("statAlignment", it) }
+    if (stages.length() > 0) put("statStages", stages)
 }
 
 private fun natureEntity(showdownId: String, displayName: String): JSONObject = JSONObject().apply {

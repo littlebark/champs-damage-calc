@@ -58,6 +58,7 @@ internal enum class BattleDirectHudElement {
     DAMAGE_3,
     DAMAGE_4,
     SPEED_TABLE,
+    MATCH_TITLE,
     DETAIL,
 }
 
@@ -90,6 +91,8 @@ internal object BattleDirectHudLayout {
         BattleDirectHudElement.OPPONENT_RIGHT to BattleDirectHudAnchor(0.797f, 0.158f, 0.203f),
         BattleDirectHudElement.OWN_LEFT to BattleDirectHudAnchor(0.053f, 0.762f, 0.188f),
         BattleDirectHudElement.OWN_RIGHT to BattleDirectHudAnchor(0.251f, 0.762f, 0.193f),
+        // 标题框：贴在第一个伤害红框正上方，写明这一算「我方谁 对 谁」。
+        BattleDirectHudElement.MATCH_TITLE to BattleDirectHudAnchor(0.462f, 0.440f, 0.212f),
         BattleDirectHudElement.DAMAGE_1 to BattleDirectHudAnchor(0.462f, 0.500f, 0.212f),
         BattleDirectHudElement.DAMAGE_2 to BattleDirectHudAnchor(0.462f, 0.595f, 0.212f),
         BattleDirectHudElement.DAMAGE_3 to BattleDirectHudAnchor(0.462f, 0.690f, 0.212f),
@@ -410,12 +413,18 @@ internal data class BattleDirectHudModel(
     val mode: BattleDirectHudMode = BattleDirectHudMode.TYPE_MATCHUP,
     val sessionReady: Boolean = true,
     val damageValues: List<String> = listOf("", "", "", ""),
+    /** 坚盾剑怪专用：防守方是盾/剑时，补算另一种姿态的同一批招式，逐框显示在下面一行。 */
+    val damageAlternateValues: List<String> = emptyList(),
+    /** 补算那一行的前缀，例如「剑」「盾」；空串表示没有补算。 */
+    val damageAlternateLabel: String = "",
     /** 速度数值行：[我方速度, 对方2点, 对方32点, 对方32点+性格1.1]，空串表示未知。 */
     val speedTableValues: List<String> = listOf("", "", "", ""),
     val ownTeamRecognition: OwnTeamRecognitionHudState = OwnTeamRecognitionHudState(),
     val typeMatchups: List<BattleTypeMatchup> = emptyList(),
     val ownChangeOptions: Map<Int, List<BattleDirectHudChangeOption>> = emptyMap(),
     val opponentChangeOptions: Map<Int, List<BattleDirectHudChangeOption>> = emptyMap(),
+    /** 伤害框上方的标题：「我方谁 对 谁」，为空时不显示。 */
+    val matchTitle: String = "",
 )
 
 internal data class BattleTypeMatchup(
@@ -485,7 +494,11 @@ internal class BattleDirectOverlayUi(
     private var activeProfileKey = ""
     private var activePlacements: MutableMap<BattleDirectHudElement, BattleDirectHudPlacement> = mutableMapOf()
     private var damageLabels: List<TextView> = emptyList()
+    private var damageValues: List<String> = listOf("", "", "", "")
+    private var damageAlternateValues: List<String> = emptyList()
+    private var damageAlternateLabel: String = ""
     private var speedTableLabel: TextView? = null
+    private var matchTitleLabel: TextView? = null
     private val pickerViews = mutableMapOf<BattleDirectHudElement, PickerViews>()
     private var toggleButton: Button? = null
     private var speedContainer: LinearLayout? = null
@@ -518,15 +531,34 @@ internal class BattleDirectOverlayUi(
             return
         }
         damageLabels = emptyList()
+        damageValues = listOf("", "", "", "")
+        damageAlternateValues = emptyList()
+        damageAlternateLabel = ""
+        if (next.matchTitle.isNotBlank()) {
+            val titleLabel = matchTitleView(next.matchTitle)
+            matchTitleLabel = titleLabel
+            addWindow(
+                BattleDirectHudElement.MATCH_TITLE,
+                titleLabel,
+                region,
+                desiredWidth = dp(190),
+                desiredHeight = dp(24),
+                interactive = false,
+            )
+        }
         DAMAGE_ELEMENTS.forEachIndexed { index, element ->
-            val label = damageLabelView(next.damageValues.getOrNull(index).orEmpty())
+            val label = damageLabelView(
+                value = next.damageValues.getOrNull(index).orEmpty(),
+                alternate = next.damageAlternateValues.getOrNull(index).orEmpty(),
+                alternateLabel = next.damageAlternateLabel,
+            )
             damageLabels = damageLabels + label
             addWindow(
                 element,
                 label,
                 region,
                 desiredWidth = dp(190),
-                desiredHeight = dp(30),
+                desiredHeight = if (next.damageAlternateLabel.isBlank()) dp(30) else dp(44),
                 interactive = false,
             )
         }
@@ -556,12 +588,18 @@ internal class BattleDirectOverlayUi(
             alpha = if (isEnabled) 1f else 0.62f
             applyToggleButtonStyle(this, isEnabled)
         }
+        matchTitleLabel?.apply {
+            text = next.matchTitle
+            visibility = if (next.matchTitle.isNotBlank()) View.VISIBLE else View.GONE
+        }
         if (!next.sessionReady || next.mode != BattleDirectHudMode.CALCULATION) return
         renderSpeedView(next)
         updateSpeedTable(next.speedTableValues)
         updateStatusControl(next.statusText)
         updateAssumptionControl(next)
         pickerViews.values.forEach { updatePicker(it, next) }
+        damageAlternateValues = next.damageAlternateValues
+        damageAlternateLabel = next.damageAlternateLabel
         updateDamage(next.damageValues)
     }
 
@@ -624,16 +662,38 @@ internal class BattleDirectOverlayUi(
                 "updateDamage with ${damageLabels.size} boxes only; values=$fixed",
             )
         }
-        damageLabels.forEachIndexed { index, label -> label.text = fixed[index] }
+        damageValues = fixed
+        renderDamageLabels()
         model = model?.copy(damageValues = fixed)
         // 首次显示时如果安全区还没最终确定，锚点会按旧区域算，整组会偏一行、最后一框可能掉出屏幕。
         // 每次刷新数值后按当前区域重算一遍，代价很小，能自愈这种偏位。
         runCatching { reflow() }
     }
 
+    /** 坚盾剑怪补算：另一种姿态的数值，显示在每个伤害框的第二行。 */
+    fun updateDamageAlternate(values: List<String>, label: String) {
+        damageAlternateValues = (values + listOf("", "", "", "")).take(4)
+        damageAlternateLabel = label
+        renderDamageLabels()
+        model = model?.copy(
+            damageAlternateValues = damageAlternateValues,
+            damageAlternateLabel = label,
+        )
+    }
+
+    private fun renderDamageLabels() {
+        damageLabels.forEachIndexed { index, label ->
+            label.text = damageLabelText(
+                value = damageValues.getOrNull(index).orEmpty(),
+                alternate = damageAlternateValues.getOrNull(index).orEmpty(),
+                alternateLabel = damageAlternateLabel,
+            )
+        }
+    }
+
     fun updateSpeedTable(values: List<String>) {
         val fixed = (values + listOf("", "", "", "")).take(4)
-        speedTableLabel?.text = formatSpeedTable(fixed)
+        speedTableLabel?.text = tierSpeedText(fixed)
         model = model?.copy(speedTableValues = fixed)
     }
 
@@ -698,7 +758,11 @@ internal class BattleDirectOverlayUi(
         windows.values.forEach { record -> runCatching { windowManager.removeView(record.view) } }
         windows.clear()
         damageLabels = emptyList()
+        damageValues = listOf("", "", "", "")
+        damageAlternateValues = emptyList()
+        damageAlternateLabel = ""
         speedTableLabel = null
+        matchTitleLabel = null
         pickerViews.clear()
         toggleButton = null
         speedContainer = null
@@ -984,7 +1048,8 @@ internal class BattleDirectOverlayUi(
         contentDescription = type
     }
 
-    private fun damageLabelView(value: String): TextView = TextView(context).apply {
+    /** 伤害框正上方的标题：「我方谁 对 谁」，一行、居中、不发散。 */
+    private fun matchTitleView(value: String): TextView = TextView(context).apply {
         text = value
         textSize = 8.5f
         gravity = Gravity.CENTER
@@ -992,13 +1057,73 @@ internal class BattleDirectOverlayUi(
         ellipsize = android.text.TextUtils.TruncateAt.END
         setTextColor(TEXT)
         setTypeface(typeface, android.graphics.Typeface.BOLD)
-        setPadding(dp(3), dp(1), dp(3), dp(1))
+        setPadding(dp(4), dp(1), dp(4), dp(1))
         background = roundedBackground(SURFACE, BORDER, 5f)
+    }
+
+    private fun damageLabelView(value: String, alternate: String = "", alternateLabel: String = ""): TextView =
+        TextView(context).apply {
+            text = damageLabelText(value, alternate, alternateLabel)
+            textSize = 8.5f
+            gravity = Gravity.CENTER
+            maxLines = 2
+            ellipsize = android.text.TextUtils.TruncateAt.END
+            setTextColor(TEXT)
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setPadding(dp(3), dp(1), dp(3), dp(1))
+            background = roundedBackground(SURFACE, BORDER, 5f)
+        }
+
+    /** 主行是三档伤害；有坚盾剑怪补算时再加一行「剑/盾 x%｜y%｜z%」。 */
+    private fun damageLabelText(value: String, alternate: String, alternateLabel: String): CharSequence {
+        val main = tierDamageText(value)
+        if (alternateLabel.isBlank() || alternate.isBlank()) return main
+        return android.text.SpannableStringBuilder(main)
+            .append("\n")
+            .append(alternateLabel)
+            .append(" ")
+            .append(tierDamageText(alternate))
+    }
+
+    /**
+     * 三档伤害按严重程度上色：① 灰蓝 ② 琥珀 ③ 红（③ 是「满 HP + 防御 + 性格」的最坏口径）。
+     * 只上色、不加任何文字标记，数字和分隔符位置都不动。
+     */
+    private fun tierDamageText(value: String): CharSequence {
+        val parts = value.split("｜")
+        if (parts.size < 3) return value
+        return tierColorText(parts, intArrayOf(TIER_LOW, TIER_MID, TIER_HIGH), "｜")
+    }
+
+    /**
+     * 速度行同理：第一个是我方速度保持近白，后面三个是对手 2 点 / 32 点 / 32 点+性格 1.1，
+     * 与伤害三档一一对应上同一套颜色，扫一眼就能知道「加到哪一档才比我快」。
+     */
+    private fun tierSpeedText(values: List<String>): CharSequence {
+        val cells = (0 until 4).map { values.getOrNull(it).orEmpty().ifBlank { "?" } }
+        return tierColorText(cells, intArrayOf(TEXT, TIER_LOW, TIER_MID, TIER_HIGH), "   ")
+    }
+
+    private fun tierColorText(cells: List<String>, colors: IntArray, separator: String): CharSequence {
+        val builder = android.text.SpannableStringBuilder()
+        cells.forEachIndexed { index, cell ->
+            if (index > 0) builder.append(separator)
+            val start = builder.length
+            builder.append(cell)
+            val color = colors.getOrNull(index) ?: TEXT
+            builder.setSpan(
+                android.text.style.ForegroundColorSpan(color),
+                start,
+                builder.length,
+                android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE,
+            )
+        }
+        return builder
     }
 
     /** 速度数值行：我方速度靠左，后面依次是对手 2 点 / 32 点 / 32 点+性格 1.1。 */
     private fun speedTableLabelView(values: List<String>): TextView = TextView(context).apply {
-        text = formatSpeedTable(values)
+        text = tierSpeedText(values)
         textSize = 8.5f
         gravity = Gravity.START or Gravity.CENTER_VERTICAL
         maxLines = 1
@@ -1188,6 +1313,7 @@ internal class BattleDirectOverlayUi(
     ): OverlayBounds {
         if (element != BattleDirectHudElement.MATCHUP &&
             element != BattleDirectHudElement.SPEED_TABLE &&
+            element != BattleDirectHudElement.MATCH_TITLE &&
             element !in DAMAGE_ELEMENTS
         ) return safeRegion
         val bounds = windowManager.currentWindowMetrics.bounds
@@ -1312,6 +1438,10 @@ internal class BattleDirectOverlayUi(
         val OPPONENT = Color.rgb(255, 145, 76)
         val TEXT = Color.rgb(244, 248, 251)
         val TEXT_MUTED = Color.rgb(192, 204, 214)
+        // 三档伤害的严重程度：① 灰蓝（几乎没投资）② 琥珀（常见满 HP）③ 红（满 HP+防御+性格，最坏）。
+        val TIER_LOW = Color.rgb(159, 179, 200)
+        val TIER_MID = Color.rgb(224, 160, 48)
+        val TIER_HIGH = Color.rgb(224, 72, 60)
         val RESIST_SURFACE = Color.argb(218, 5, 53, 72)
         val RESIST_BORDER = Color.rgb(17, 181, 224)
         val WEAK_SURFACE = Color.argb(218, 101, 42, 23)

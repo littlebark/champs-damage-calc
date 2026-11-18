@@ -7,24 +7,6 @@ import java.io.File
 import java.time.Instant
 import java.util.UUID
 
-data class PreviewCandidate(
-    val entity: EntityValue,
-    val confidence: Double,
-    val source: String,
-)
-
-data class PreviewSlotChoice(
-    val side: String,
-    val slotIndex: Int,
-    val candidates: List<PreviewCandidate>,
-)
-
-data class TeamPreviewDraft(
-    val capturedAt: String,
-    val ownSlots: List<PreviewSlotChoice>,
-    val opponentSlots: List<PreviewSlotChoice>,
-)
-
 data class BattleStatStages(
     val atk: Int = 0,
     val def: Int = 0,
@@ -424,46 +406,7 @@ internal fun clearTransientBattleState(filesDir: File) {
 
 class BattleSessionRepository(private val context: Context) {
     private val directory get() = context.filesDir.resolve("battle-session")
-    private val previewFile get() = directory.resolve("current-team-preview.json")
     private val sessionFile get() = directory.resolve("current-battle-session.json")
-
-    fun loadPreview(): TeamPreviewDraft? {
-        if (!previewFile.isFile) return null
-        val root = JSONObject(previewFile.readText(Charsets.UTF_8))
-        fun slots(key: String) = root.optJSONArray(key).toObjects().map { slot ->
-            PreviewSlotChoice(
-                side = slot.optString("side"),
-                slotIndex = slot.optInt("slotIndex"),
-                candidates = slot.optJSONArray("candidates").toObjects().map { candidate ->
-                    PreviewCandidate(
-                        entity = candidate.toEntityValue(),
-                        confidence = candidate.optDouble("confidence"),
-                        source = candidate.optString("source"),
-                    )
-                },
-            )
-        }.sortedBy(PreviewSlotChoice::slotIndex)
-        return TeamPreviewDraft(
-            capturedAt = root.optString("capturedAt"),
-            ownSlots = slots("ownTeamCandidates"),
-            opponentSlots = slots("opponentTeamCandidates"),
-        )
-    }
-
-    fun createSession(preview: TeamPreviewDraft, ownTeamId: String, opponents: List<EntityValue>): BattleSession {
-        require(opponents.size == 6) { "请确认全部 6 只对方宝可梦" }
-        return BattleSession(
-            sessionId = "battle-${System.currentTimeMillis()}",
-            createdAt = Instant.now().toString(),
-            previewCapturedAt = preview.capturedAt,
-            selectedOwnTeamId = ownTeamId,
-            opponentTeam = opponents,
-            calculation = BattleCalculationState(
-                battleType = "DOUBLE",
-                spread = true,
-            ),
-        ).also(::save)
-    }
 
     fun loadSession(): BattleSession? {
         if (!sessionFile.isFile) return null
@@ -775,6 +718,10 @@ class OpponentPresetRepository(private val context: Context) {
         return formsByFamily[selected.familyId].orEmpty()
     }
 
+    /** showdownId 反查词库条目（图像识别给出 id 后要拿回带本地化名字的 EntityValue）。 */
+    fun speciesForShowdownId(showdownId: String): EntityValue? =
+        speciesByShowdown[normalizeShowdownId(showdownId)]
+
     /**
      * 这只宝可梦能超级进化成什么：按 showdownId 前缀挑家族里的 Mega 形态。
      * 超能妙喵的 Mega 按性别拆成雄/雌两条，这里用 species.gender 选（没性别默认雄性）。
@@ -794,6 +741,31 @@ class OpponentPresetRepository(private val context: Context) {
         val base = normalizeShowdownId(species.showdownId)
         val direct = mega.filter { normalizeShowdownId(it.showdownId).startsWith(base) }
         return direct.ifEmpty { mega }
+    }
+
+    /**
+     * 同名但属性/种族值不同的可切换形态（洛托姆家电型、地区形态、肯泰罗三种、南瓜怪人尺寸等）。
+     *
+     * 数据驱动，不写名单：同一家族里排除 Mega（Mega 有单独的 chip）、排除纯性别拆分
+     * （爱管侍/超能妙喵/幽尾玄鱼靠性别徽章判断）、排除属性与种族值都相同的纯外观型
+     * （彩粉蝶花纹、霜奶仙、怒鹦哥配色等）。剩下 ≥2 项才返回，第 0 项固定是基础形态。
+     */
+    fun switchableFormsFor(species: EntityValue): List<SpeciesFormOption> {
+        val family = formsFor(species)
+            .filter { !isMegaSpeciesForm(it.species.showdownId) }
+            .filter { !it.species.displayName.contains("雌性") && !it.species.displayName.contains("雄性") }
+            .distinctBy { normalizeShowdownId(it.species.showdownId) }
+        if (family.size < 2) return emptyList()
+        val base = family.firstOrNull {
+            normalizeShowdownId(it.species.showdownId) == normalizeShowdownId(species.showdownId)
+        } ?: family.first()
+        // 除了基础形态之外，必须还有「属性或种族值不同」的兄弟形态；都相同就是纯外观（彩粉蝶花纹之类）。
+        val variants = family.filter { it.types != base.types || it.baseStats != base.baseStats }
+        if (variants.isEmpty()) return emptyList()
+        // 基础形态永远排第 0 项（玩家用它退回基础口径），其余按稳定顺序追加。
+        return (listOf(base) + variants.filter {
+            normalizeShowdownId(it.species.showdownId) != normalizeShowdownId(base.species.showdownId)
+        }).distinctBy { normalizeShowdownId(it.species.showdownId) }
     }
 
     /** 从候选里挑一个：优先上次选过的形态，否则取第一个。 */
@@ -1547,7 +1519,8 @@ fun buildBattleDamageRequest(
             put("attacker", ownBuild)
             put("defenderIdentity", JSONObject().put("species", opponentEntity))
             put("defenderProfileSet", if (tierDefenderProfile) {
-                tierDefenderProfileSet(opponentEntity)
+                // 对手的「能力等级」按承受那一项传进四个档位（物攻招吃防御、特攻招吃特防）。
+                tierDefenderProfileSet(opponentEntity, opponentCondition.stages.toJson())
             } else {
                 JSONObject().apply {
                     put("defenderSpecies", opponentEntity)
@@ -1736,4 +1709,16 @@ private fun JSONObject?.toStringLists(): Map<String, List<String>> {
     return keys().asSequence().associateWith { key -> optJSONArray(key).toStrings() }
 }
 
-internal fun normalizeShowdownId(value: String) = value.lowercase().replace(Regex("[^a-z0-9]+"), "")
+/**
+ * 规范化 showdownId：小写 + 只保留 a-z0-9（"Trick Room" → "trickroom"）。
+ * 用逐字符过滤而不是 Regex：这个方法在学会表遍历里会被调用上万次，
+ * 原来每次 new 一个 Regex 会白烧上百毫秒（图鉴进页 205ms 的主因）。
+ */
+internal fun normalizeShowdownId(value: String): String {
+    val builder = StringBuilder(value.length)
+    value.forEach { ch ->
+        val lower = ch.lowercaseChar()
+        if (lower in 'a'..'z' || lower in '0'..'9') builder.append(lower)
+    }
+    return builder.toString()
+}
